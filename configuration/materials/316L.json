@@ -1,0 +1,23 @@
+{
+    "name": "316L",
+    "properties": {
+        "density": 7900.0,
+        "specific_heat": 470.0,
+        "thermal_diffusivity": 4.0425e-6,
+        "surface_tension": 1.6,
+        "viscosity": 0.0056,
+        "epsilon": 0.35,
+        "laser_absorptivity": 0.50,
+        "melting_temp": 1670.0,
+        "solidus_temp": 1650.0,
+        "liquidus_temp": 1700.0,
+        "latent_heat_of_fusion": 280000.0,
+        "particle_radius": 4.2e-5
+    },
+    "metadata": {
+        "source": "Material property databases",
+        "temperature": "25°C",
+        "condition": "annealed",
+        "notes": "Austenitic stainless steel, powder form properties"
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "name": "17-4PH",
+    "properties": {
+        "density": 7800.0,
+        "specific_heat": 470.0,
+        "thermal_diffusivity": 4.3661e-6,
+        "surface_tension": 1.6,
+        "viscosity": 0.005,
+        "epsilon": 0.30,
+        "laser_absorptivity": 0.45,
+        "melting_temp": 1690.0,
+        "solidus_temp": 1673.0,
+        "liquidus_temp": 1713.0,
+        "latent_heat_of_fusion": 280000.0,
+        "particle_radius": 4.2e-5
+    },
+    "metadata": {
+        "source": "Material property databases",
+        "temperature": "25°C",
+        "condition": "solution annealed",
+        "notes": "Precipitation hardening stainless steel, powder form properties"
+    }
+}
