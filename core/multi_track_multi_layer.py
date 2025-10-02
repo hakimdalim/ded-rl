@@ -4,7 +4,7 @@ import numpy as np
 from callbacks._base_callbacks import SimulationEvent
 from callbacks._callback_manager import CallbackManager
 from callbacks.completion_callbacks import SimulationComplete
-from framework.process_parameters import set_params
+from configuration.process_parameters import set_params
 from geometry.clad_profile_manager import CladProfileManager
 from geometry.clad_dimensions import YuzeHuangCladDimensions
 from scan_path.scan_path_manager import ScanPathManager
