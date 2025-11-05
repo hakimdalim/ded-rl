@@ -32,7 +32,7 @@ class VoxelPowderStream:
         print("=" * 60)
 
         data = np.load(voxel_path)
-        raw_field = data['data']
+        raw_field = data['stream']
         print(f"Raw array shape: {raw_field.shape}")
 
         # Transpose from (y, x, z) to (z, y, x) if needed

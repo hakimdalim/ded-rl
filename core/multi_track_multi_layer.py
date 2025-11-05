@@ -268,7 +268,8 @@ class MultiTrackMultiLayerSimulation:
         self.temperature_tracker = TrackTemperature(
             shape=self.config['volume_shape'],
             voxel_size=self.config['voxel_size'],
-            ambient_temp=self.config.get('ambient_temp', 300.0)
+            ambient_temp=self.config.get('ambient_temp', 300.0),
+            substrate_height=self.config.get('substrate_height', 0)
         )
 
         if powder_concentration_func is None:
@@ -618,7 +619,7 @@ if __name__ == "__main__":
         StepDataCollector(save_path=None),  # Save data
         AdvancedLivePlotter(interval=1),  # Live visualization every step
         ProgressPrinter(),  # Console progress output
-        TrackCalibrationCallback(),
+        #TrackCalibrationCallback(),
     ]
 
     # Create and run simulation

@@ -53,8 +53,8 @@ class HDF5ActivationSaver(IntervalCallback):
         Initialize HDF5 activation volume saver.
 
         Args:
-            filename: HDF5 filename (saved in simulation output_dir)
-            interval: Save every N steps (default: 1 = every step)
+            filename: HDF5 filename (saved to disk only on COMPLETE event)
+            interval: Add data every N steps to memory (default: 1 = every step)
             compression: Compression algorithm ('gzip', 'lzf', None)
                         'gzip': Best compression (highly recommended for bool)
                         'lzf': Faster, less compression
@@ -65,7 +65,7 @@ class HDF5ActivationSaver(IntervalCallback):
             **kwargs: Additional arguments for IntervalCallback
         """
         super().__init__(
-            events=SimulationEvent.STEP_COMPLETE,
+            events=[SimulationEvent.STEP_COMPLETE, SimulationEvent.COMPLETE],
             interval=interval,
             **kwargs
         )
@@ -80,12 +80,23 @@ class HDF5ActivationSaver(IntervalCallback):
         self.compression_opts = compression_opts if compression == 'gzip' else None
         self.save_metadata = save_metadata
 
-        # For single file mode
+        # HDF5 file kept in memory until COMPLETE event
         self._h5file = None
         self._file_path = None
 
     def _execute(self, context: dict) -> None:
-        """Save activation volume to HDF5."""
+        """Route to add step data or save file based on event."""
+        event = context['event']
+
+        if event == SimulationEvent.STEP_COMPLETE:
+            # Add data to memory
+            self._add_step_data(context)
+        elif event == SimulationEvent.COMPLETE:
+            # Save file to disk
+            self._save_file_to_disk(context)
+
+    def _add_step_data(self, context: dict):
+        """Add activation data for current step to in-memory HDF5 file."""
         sim = context['simulation']
 
         # Get activation volume
@@ -98,23 +109,14 @@ class HDF5ActivationSaver(IntervalCallback):
         # Get current step
         step = sim.progress_tracker.step_count
 
-        # Save to file
-        self._save_to_file(activation_vol, step, context)
-
-    def _save_to_file(self, activation_vol: np.ndarray, step: int, context: dict):
-        """Save to HDF5 file (all timesteps in one file)."""
-        # Open or create file on first call
+        # Create file in memory on first call
         if self._h5file is None:
-            # File saved directly in simulation output_dir
-            save_path = self.resolve_path(context, self.filename)
-            self._file_path = save_path
+            # Determine path (will be used later for saving)
+            self._file_path = self.resolve_path(context, self.filename)
 
-            # Ensure directory exists
-            self.ensure_dir(self._file_path.parent)
-
-            # Open file in append mode
-            self._h5file = h5py.File(self._file_path, 'a')
-            print(f"Saving activation volumes to: {self._file_path}")
+            # Create in-memory HDF5 file (driver='core' with backing_store=False)
+            self._h5file = h5py.File(f"memory_{id(self)}.h5", 'w', driver='core', backing_store=False)
+            print(f"Created in-memory HDF5 file (will save to: {self._file_path})")
 
         # Create group for this step
         step_group = self._h5file.create_group(f'step_{step:04d}')
@@ -133,8 +135,29 @@ class HDF5ActivationSaver(IntervalCallback):
         if self.save_metadata:
             self._save_metadata_to_group(step_group, step, context, activation_vol)
 
-        # Flush to disk
+    def _save_file_to_disk(self, context: dict):
+        """Save in-memory HDF5 file to disk on simulation completion."""
+        if self._h5file is None:
+            print("No activation data to save (simulation had no steps)")
+            return
+
+        # Ensure output directory exists
+        self.ensure_dir(self._file_path.parent)
+
+        # Flush all pending writes before getting file image
         self._h5file.flush()
+
+        # Get file image and write to disk
+        file_image = self._h5file.id.get_file_image()
+
+        with open(self._file_path, 'wb') as f:
+            f.write(file_image)
+
+        print(f"Saved activation volumes to disk: {self._file_path}")
+
+        # Close the in-memory file
+        self._h5file.close()
+        self._h5file = None
 
     def _save_metadata_to_group(self, group, step: int, context: dict, activation_vol: np.ndarray):
         """Save metadata as HDF5 attributes."""
@@ -190,11 +213,11 @@ class HDF5ActivationSaver(IntervalCallback):
             group.attrs['voxel_size_z'] = config.get('voxel_size', [0, 0, 0])[2]
 
     def __del__(self):
-        """Close HDF5 file on cleanup."""
+        """Close HDF5 file on cleanup (if not already saved)."""
         if self._h5file is not None:
             try:
                 self._h5file.close()
-                print(f"Closed HDF5 file: {self._file_path}")
+                print(f"Warning: HDF5 file closed without saving (COMPLETE event not reached)")
             except:
                 pass
 

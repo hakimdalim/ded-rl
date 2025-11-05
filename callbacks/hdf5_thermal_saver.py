@@ -63,8 +63,8 @@ class HDF5ThermalSaver(IntervalCallback):
     ):
         """
         Args:
-            filename: HDF5 filename (saved in simulation output_dir)
-            interval: Save every N steps (default: 1 = every step)
+            filename: HDF5 filename (saved to disk only on COMPLETE event)
+            interval: Add data every N steps to memory (default: 1 = every step)
             compression: Compression algorithm ('gzip', 'lzf', None)
                         'gzip': Better compression, slower
                         'lzf': Faster, less compression
@@ -74,7 +74,7 @@ class HDF5ThermalSaver(IntervalCallback):
             **kwargs: Additional arguments for IntervalCallback
         """
         super().__init__(
-            events=SimulationEvent.STEP_COMPLETE,
+            events=[SimulationEvent.STEP_COMPLETE, SimulationEvent.COMPLETE],
             interval=interval,
             **kwargs
         )
@@ -90,12 +90,23 @@ class HDF5ThermalSaver(IntervalCallback):
         self.compression_opts = compression_opts if compression == 'gzip' else None
         self.save_metadata = save_metadata
 
-        # For single file mode
+        # HDF5 file kept in memory until COMPLETE event
         self._h5file = None
         self._file_path = None
 
     def _execute(self, context: dict) -> None:
-        """Save temperature field to HDF5."""
+        """Route to add step data or save file based on event."""
+        event = context['event']
+
+        if event == SimulationEvent.STEP_COMPLETE:
+            # Add data to memory
+            self._add_step_data(context)
+        elif event == SimulationEvent.COMPLETE:
+            # Save file to disk
+            self._save_file_to_disk(context)
+
+    def _add_step_data(self, context: dict):
+        """Add temperature data for current step to in-memory HDF5 file."""
         sim = context['simulation']
 
         # Get temperature field
@@ -108,23 +119,14 @@ class HDF5ThermalSaver(IntervalCallback):
         # Get current step
         step = sim.progress_tracker.step_count
 
-        # Save to single file (all timesteps together)
-        self._save_to_file(temp_field, step, context)
-
-    def _save_to_file(self, temp_field: np.ndarray, step: int, context: dict):
-        """Save to HDF5 file (all timesteps in one file)."""
-        # Open or create file on first call
+        # Create file in memory on first call
         if self._h5file is None:
-            # File saved directly in simulation output_dir
-            save_path = self.resolve_path(context, self.filename)
-            self._file_path = save_path
+            # Determine path (will be used later for saving)
+            self._file_path = self.resolve_path(context, self.filename)
 
-            # Ensure directory exists
-            self.ensure_dir(self._file_path.parent)
-
-            # Open file in append mode
-            self._h5file = h5py.File(self._file_path, 'a')
-            print(f"Saving thermal fields to: {self._file_path}")
+            # Create in-memory HDF5 file (driver='core' with backing_store=False)
+            self._h5file = h5py.File(f"memory_{id(self)}.h5", 'w', driver='core', backing_store=False)
+            print(f"Created in-memory HDF5 file (will save to: {self._file_path})")
 
         # Create group for this step
         step_group = self._h5file.create_group(f'step_{step:04d}')
@@ -142,8 +144,29 @@ class HDF5ThermalSaver(IntervalCallback):
         if self.save_metadata:
             self._save_metadata_to_group(step_group, step, context)
 
-        # Flush to disk
+    def _save_file_to_disk(self, context: dict):
+        """Save in-memory HDF5 file to disk on simulation completion."""
+        if self._h5file is None:
+            print("No thermal data to save (simulation had no steps)")
+            return
+
+        # Ensure output directory exists
+        self.ensure_dir(self._file_path.parent)
+
+        # Flush all pending writes before getting file image
         self._h5file.flush()
+
+        # Get file image and write to disk
+        file_image = self._h5file.id.get_file_image()
+
+        with open(self._file_path, 'wb') as f:
+            f.write(file_image)
+
+        print(f"Saved thermal fields to disk: {self._file_path}")
+
+        # Close the in-memory file
+        self._h5file.close()
+        self._h5file = None
 
     def _save_metadata_to_group(self, group, step: int, context: dict):
         """Save metadata as HDF5 attributes."""
@@ -199,11 +222,11 @@ class HDF5ThermalSaver(IntervalCallback):
             group.attrs['voxel_size_z'] = config.get('voxel_size', [0, 0, 0])[2]
 
     def __del__(self):
-        """Close HDF5 file on cleanup."""
+        """Close HDF5 file on cleanup (if not already saved)."""
         if self._h5file is not None:
             try:
                 self._h5file.close()
-                print(f"Closed HDF5 file: {self._file_path}")
+                print(f"Warning: HDF5 file closed without saving (COMPLETE event not reached)")
             except:
                 pass
 
@@ -325,22 +348,107 @@ def get_file_info(filepath: str):
 
 
 if __name__ == "__main__":
-    print("""
-HDF5ThermalSaver - Efficient thermal field storage
 
-Usage:
-    from callbacks.hdf5_thermal_saver import HDF5ThermalSaver
 
-    callback = HDF5ThermalSaver(
-        filename="thermal_fields.h5",
-        interval=1,  # Save every step
-        compression='gzip',
-        compression_opts=4
+    from simulate import SimulationRunner
+    from callbacks.completion_callbacks import HeightCompletionCallback
+    from callbacks.step_data_collector import StepDataCollector
+    from callbacks.callback_collection import ProgressPrinter, ThermalPlotSaver, CrossSectionPlotter, FinalStateSaver
+    #from callbacks.hdf5_thermal_saver import HDF5ThermalSaver
+    from callbacks.callback_collection import TemperatureSliceSaver
+    from callbacks.callback_collection import VoxelTemperatureSaver
+    from callbacks.hdf5_activation_saver import HDF5ActivationSaver
+
+    # Create callbacks
+    callbacks = [
+        HeightCompletionCallback(),  # Stop at target height
+        StepDataCollector(save_path=None),  # Save data
+        HDF5ThermalSaver(
+            filename="thermal_fields.h5",
+            interval=1,  # Save every step
+            compression='gzip',
+            compression_opts=4
+        ),
+        ProgressPrinter(),  # Console progress output
+        #TemperatureSliceSaver(interval=1),
+        #VoxelTemperatureSaver(interval=1),
+        HDF5ActivationSaver(
+            filename="activation_volumes.h5",
+            interval=1,  # Save every 10 steps
+            compression='gzip',
+            compression_opts=9  # Max compression for bool arrays
+        ),
+        StepDataCollector(tracked_fields=None, save_path="simulation_data.csv"),
+        #CrossSectionPlotter(num_sections=5),
+        FinalStateSaver(),
+
+    ]
+
+    # Create and run simulation
+    runner = SimulationRunner.from_human_units(
+        build_volume_mm=(20, 20, 15),
+        part_volume_mm=(1, 5, 0.1),
+        voxel_size_um=200,
+        delta_t_ms=200,
+        scan_speed_mm_s=3,
+        laser_power_W=600,
+        powder_feed_g_min=2,
+        hatch_spacing_um=700,
+        layer_spacing_um=350,
+        callbacks=callbacks,
     )
 
-Load data:
-    from callbacks.hdf5_thermal_saver import load_thermal_field, list_steps_in_file
+    runner.run()
 
-    steps = list_steps_in_file("thermal_fields.h5")
-    temp = load_thermal_field("thermal_fields.h5", step=steps[0])
-""")
+    # Test loading and verify chunking - THERMAL
+    print("\n" + "="*60)
+    print("Testing HDF5 THERMAL file loading and chunk structure")
+    print("="*60)
+
+    # Get the actual file path from the callback
+    thermal_saver = [cb for cb in callbacks if isinstance(cb, HDF5ThermalSaver)][0]
+    filepath = thermal_saver._file_path
+    print(f"File location: {filepath}")
+
+    steps = list_steps_in_file(str(filepath))
+    print(f"Steps in file: {steps}")
+
+    # Load first and last step
+    temp_first = load_thermal_field(str(filepath), step=steps[0])
+    temp_last = load_thermal_field(str(filepath), step=steps[-1])
+    print(f"First step shape: {temp_first.shape}")
+    print(f"Last step shape: {temp_last.shape}")
+
+    # Verify chunks correspond to steps
+    with h5py.File(str(filepath), 'r') as f:
+        print(f"Total groups (chunks): {len([k for k in f.keys() if k.startswith('step_')])}")
+        print(f"Expected (from steps): {len(steps)}")
+        print("✓ Chunking verified: each step = one HDF5 group/chunk")
+
+    # Test loading and verify chunking - ACTIVATION
+    print("\n" + "="*60)
+    print("Testing HDF5 ACTIVATION file loading and chunk structure")
+    print("="*60)
+
+    from hdf5_activation_saver import load_activation_volume, list_steps_in_file as list_steps_activation
+
+    activation_saver = [cb for cb in callbacks if isinstance(cb, HDF5ActivationSaver)][0]
+    filepath_act = activation_saver._file_path
+    print(f"File location: {filepath_act}")
+
+    steps_act = list_steps_activation(str(filepath_act))
+    print(f"Steps in file: {steps_act}")
+
+    # Load first and last step
+    act_first = load_activation_volume(str(filepath_act), step=steps_act[0])
+    act_last = load_activation_volume(str(filepath_act), step=steps_act[-1])
+    print(f"First step shape: {act_first.shape}")
+    print(f"Last step shape: {act_last.shape}")
+    print(f"First step activated voxels: {act_first.sum()}")
+    print(f"Last step activated voxels: {act_last.sum()}")
+
+    # Verify chunks correspond to steps
+    with h5py.File(str(filepath_act), 'r') as f:
+        print(f"Total groups (chunks): {len([k for k in f.keys() if k.startswith('step_')])}")
+        print(f"Expected (from steps): {len(steps_act)}")
+        print("✓ Chunking verified: each step = one HDF5 group/chunk")

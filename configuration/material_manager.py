@@ -51,7 +51,7 @@ class MaterialManager(ParameterManager):
 
         # Load from file
         path = cls.MATERIALS_DIR / f"{name}.json"
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             material_data = json.load(f)
 
         # Cache for future use
