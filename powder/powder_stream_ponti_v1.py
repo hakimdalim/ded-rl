@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Dict, Tuple
 from utils.vectorize_inputs import prepare_points
-import gc
 
 
 class VoxelPowderStream:
@@ -40,42 +39,10 @@ class VoxelPowderStream:
 
         # Transpose from (y, x, z) to (z, y, x) if needed
         if raw_field.shape[2] > max(raw_field.shape[0], raw_field.shape[1]):
-            transposed_field = np.transpose(raw_field, (2, 0, 1))
-            print(f"Transposed to (z, y, x): {transposed_field.shape}")
+            self.field = np.transpose(raw_field, (2, 0, 1))
+            print(f"Transposed to (z, y, x): {self.field.shape}")
         else:
-            transposed_field = raw_field
-
-        # FIRST: Detect focal point in full array (or use cached if available)
-        if cached_metadata is not None and 'iz_substrate_original' in cached_metadata:
-            iz_focal_full = cached_metadata['iz_substrate_original']
-            print(f"Using cached focal point (original coordinates): slice {iz_focal_full}")
-        else:
-            # Detect focal point in full transposed array
-            nz_full = transposed_field.shape[0]
-            max_intensities_per_slice = np.array([np.max(transposed_field[iz, :, :]) for iz in range(nz_full)])
-            iz_focal_full = np.argmax(max_intensities_per_slice)
-            print(f"Detected focal point (original coordinates): slice {iz_focal_full}")
-
-        # THEN: Crop centered on focal point (keep ±quartile range around focal point)
-        self.field, self.crop_offsets, iz_focal_cropped = self._crop_around_focal_point(transposed_field, iz_focal_full)
-
-        # Calculate memory savings BEFORE deleting
-        original_size = transposed_field.nbytes / (1024 ** 2)  # MB
-        cropped_size = self.field.nbytes / (1024 ** 2)  # MB
-        savings_pct = (1 - cropped_size / original_size) * 100
-        nz_original = transposed_field.shape[0]
-
-        # Explicitly delete the original arrays to free memory immediately
-        del raw_field
-        del transposed_field
-        del data
-        gc.collect()  # Force garbage collection
-
-        print(f"Cropped to: {self.field.shape} (z, y, x)")
-        print(f"Crop offsets (z, y, x): {self.crop_offsets}")
-
-        # Calculate memory savings
-        print(f"Memory: {cropped_size:.1f} MB (was {original_size:.1f} MB, saved {savings_pct:.1f}%)")
+            self.field = raw_field
 
         # Store dimensions
         self.shape = self.field.shape
@@ -93,54 +60,53 @@ class VoxelPowderStream:
         self.nozzle_offset_slices = nozzle_offset_slices
         self.nozzle_offset_distance = nozzle_offset_slices * self.spacing[2]  # Convert to meters
 
-        # Focal point in cropped coordinates (for array operations)
-        self.iz_substrate = iz_focal_cropped
+        # Use cached metadata if available, otherwise auto-detect focal point
+        if cached_metadata is not None and 'iz_substrate' in cached_metadata:
+            print(f"Using cached focal point data")
+            iz_focal = cached_metadata['iz_substrate']
+            self.iz_substrate = iz_focal
+            self.detected_nozzle_height = cached_metadata['detected_nozzle_height']
 
-        # Store original focal point index for caching (before cropping)
-        self.iz_substrate_original = iz_focal_full
+            # Recalculate z_top and z_bottom
+            distance_substrate_to_array_top = ((nz - 1) - iz_focal) * self.spacing[2]
+            self.z_top = distance_substrate_to_array_top
+            self.z_bottom = self.z_top - nz * self.spacing[2]
 
-        # Calculate working distance
-        # CRITICAL: Need to account for slices cropped from the top of the array
-        #
-        # In original array (before crop):
-        #   - Top slice index: nz_original - 1
-        #   - Focal point: iz_focal_original
-        #   - Distance substrate to original top: (nz_original - 1 - iz_focal_original) slices
-        #   - Nozzle is nozzle_offset_slices above original top
-        #   - Working distance = distance_to_top + nozzle_offset
-        #
-        # After cropping:
-        #   - We cropped from z_min to z_max of original array
-        #   - Original array had nz_original slices (indexed 0 to nz_original-1)
-        #   - Slices removed from top = (nz_original - 1) - (z_min + nz - 1) = nz_original - z_min - nz
-        #   - The nozzle is still at the same physical location
-        #   - So nozzle is now (slices_removed_from_top + nozzle_offset_slices) above cropped top
+            working_distance_slices = ((nz - 1) - iz_focal) + nozzle_offset_slices
 
-        # Get original array size from transposed field
+            print(f"Substrate at slice index: {self.iz_substrate}, z=0.000 mm (by definition)")
+            print(f"Distance from substrate to array top: {distance_substrate_to_array_top * 1000:.3f} mm")
+            print(
+                f"Nozzle offset (array top to nozzle): {self.nozzle_offset_distance * 1000:.3f} mm ({nozzle_offset_slices} slices)")
+            print(
+                f"Detected nozzle height (working distance): {self.detected_nozzle_height * 1000:.3f} mm ({working_distance_slices} slices)")
+        else:
+            # Auto-detect focal point and use as substrate reference
+            # Array indexing: slice 0 = bottom, slice (nz-1) = top (closest to nozzle)
+            iz_focal, max_intensity_focal = self._detect_focal_point_z()
 
-        z_min = self.crop_offsets[0]
+            # Working distance calculation:
+            # working_distance_slices = ((nz - 1) - iz_focal) + nozzle_offset_slices
+            # This is: distance from focal point to array top + distance from array top to nozzle
+            working_distance_slices = ((nz - 1) - iz_focal) + nozzle_offset_slices
+            distance_substrate_to_array_top = ((nz - 1) - iz_focal) * self.spacing[2]
 
-        # Slices between cropped top and original top
-        slices_removed_from_top = (nz_original - 1) - (z_min + nz - 1)
+            # The focal point IS the substrate - define coordinate system so focal point = z=0
+            self.iz_substrate = iz_focal
 
-        # Effective nozzle offset relative to cropped array
-        effective_nozzle_offset = slices_removed_from_top + nozzle_offset_slices
+            # Set up Z-coordinates with focal point as origin
+            self.z_top = distance_substrate_to_array_top  # Positive (above substrate)
+            self.z_bottom = self.z_top - nz * self.spacing[2]  # Negative (below substrate)
 
-        # Working distance calculation
-        distance_substrate_to_array_top = ((nz - 1) - self.iz_substrate) * self.spacing[2]
-        self.z_top = distance_substrate_to_array_top
-        self.z_bottom = self.z_top - nz * self.spacing[2]
-        working_distance_slices = ((nz - 1) - self.iz_substrate) + effective_nozzle_offset
-        self.detected_nozzle_height = working_distance_slices * self.spacing[2]
+            # Working distance (nozzle height) = distance in slices * spacing
+            self.detected_nozzle_height = working_distance_slices * self.spacing[2]
 
-        print(f"Substrate at slice index: {self.iz_substrate} (cropped array), z=0.000 mm (by definition)")
-        print(f"Distance from substrate to cropped array top: {distance_substrate_to_array_top * 1000:.3f} mm")
-        print(f"Slices removed from original top: {slices_removed_from_top}")
-        print(f"Effective nozzle offset (relative to cropped top): {effective_nozzle_offset} slices")
-        print(
-            f"Nozzle offset (array top to nozzle): {self.nozzle_offset_distance * 1000:.3f} mm ({nozzle_offset_slices} slices)")
-        print(
-            f"Detected nozzle height (working distance): {self.detected_nozzle_height * 1000:.3f} mm ({working_distance_slices} slices)")
+            print(f"Substrate at slice index: {self.iz_substrate}, z=0.000 mm (by definition)")
+            print(f"Distance from substrate to array top: {distance_substrate_to_array_top * 1000:.3f} mm")
+            print(
+                f"Nozzle offset (array top to nozzle): {self.nozzle_offset_distance * 1000:.3f} mm ({nozzle_offset_slices} slices)")
+            print(
+                f"Detected nozzle height (working distance): {self.detected_nozzle_height * 1000:.3f} mm ({working_distance_slices} slices)")
 
         # DEBUG: Check if there's actually powder at this slice
         substrate_intensity = np.sum(self.field[self.iz_substrate, :, :])
@@ -671,58 +637,13 @@ class VoxelPowderStream:
             Dictionary with focal point and working distance information
         """
         return {
-            'iz_substrate': int(self.iz_substrate),  # Cropped coordinates
-            'iz_substrate_original': int(self.iz_substrate_original),  # Original coordinates for cache reuse
+            'iz_substrate': int(self.iz_substrate),
             'detected_nozzle_height': float(self.detected_nozzle_height),
             'z_top': float(self.z_top),
             'z_bottom': float(self.z_bottom),
             'nozzle_offset_slices': int(self.nozzle_offset_slices),
             'max_intensity': float(self.max_intensity)
         }
-
-    def _crop_around_focal_point(self, field: np.ndarray, iz_focal: int) -> tuple:
-        """
-        Crop 3D array centered on focal point, keeping central 50% in each dimension.
-        For Z-axis: crops centered on focal point
-        For X,Y: crops centered on array center
-
-        Args:
-            field: 3D array (z, y, x) to crop
-            iz_focal: Index of focal point in full array
-
-        Returns:
-            cropped_field: Cropped array
-            offsets: Tuple of (z_offset, y_offset, x_offset) indicating crop start positions
-            iz_focal_updated: Updated focal point index (should always be at center of cropped Z)
-        """
-        nz, ny, nx = field.shape
-
-        # Z-axis: crop centered on focal point (keep 50% = ±25% around focal point)
-        z_half_range = nz // 4  # Keep 50% total = nz/2 slices
-        z_min = max(0, iz_focal - z_half_range)
-        z_max = min(nz, iz_focal + z_half_range)
-
-        # Ensure we keep exactly nz//2 slices if possible
-        if z_max - z_min < nz // 2:
-            if z_min == 0:
-                z_max = min(nz, z_min + nz // 2)
-            elif z_max == nz:
-                z_min = max(0, z_max - nz // 2)
-
-        # X,Y axes: crop from center (keep central 50%)
-        y_min = ny // 4
-        y_max = ny - (ny // 4)
-
-        x_min = nx // 4
-        x_max = nx - (nx // 4)
-
-        # Crop WITHOUT copy - just create a view first
-        cropped = field[z_min:z_max, y_min:y_max, x_min:x_max]
-
-        # Update focal point index to cropped coordinates
-        iz_focal_cropped = iz_focal - z_min
-
-        return cropped, (z_min, y_min, x_min), iz_focal_cropped
 
     def powder_stream_boundary_at_z(self, points: np.ndarray, params: Dict) -> np.ndarray:
         """Find boundary height for given (x,y) positions"""

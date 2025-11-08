@@ -1,18 +1,19 @@
 #!/bin/bash
-#SBATCH --job-name=ded_316L
+#SBATCH --job-name=ded_316L_single_track
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=24
+#SBATCH --ntasks=16
+#SBATCH --cpus-per-task=1
 #SBATCH --exclusive
-#SBATCH --time=48:00:00
-#SBATCH --partition=normal
+#SBATCH --time=120:00:00
+#SBATCH --partition=epyc-256
 #SBATCH --mem=0
 #SBATCH --array=0-9
 
 # Production submission script for 316L single-track experiments
 # Full factorial design: 11×5×5×10 = 2,750 experiments
 # Split across 10 job arrays, each handling 275 experiments
-# Each job uses 1 node with 24 cores running experiments in parallel
+# 16 parallel experiments × 1 CPU each
+# Uses SLURM steps instead of GNU Parallel
 
 echo "=========================================="
 echo "DED 316L Single-Track Production Run"
@@ -20,11 +21,13 @@ echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Node: $SLURM_NODELIST"
-echo "CPUs: $SLURM_CPUS_PER_TASK"
+echo "Total Tasks: $SLURM_NTASKS"
+echo "CPUs per Task: $SLURM_CPUS_PER_TASK"
 echo "Start time: $(date)"
 echo "=========================================="
 
 # Load modules
+module purge  # Clean environment to prevent conflicts
 module load anaconda3/latest
 . $ANACONDA_HOME/etc/profile.d/conda.sh
 conda activate tft_3_9
@@ -35,38 +38,20 @@ echo "Python: $(which python)"
 echo "Conda env: $CONDA_DEFAULT_ENV"
 echo ""
 
-# Check if GNU parallel is available
-if ! command -v parallel &> /dev/null; then
-    echo "ERROR: GNU Parallel not found!"
-    echo "Try: module load parallel"
-    exit 1
-fi
-
-echo "GNU Parallel found: $(which parallel)"
-echo ""
-
 # ============================================================================
-# CONFIGURATION: Adjust parallel jobs here
+# CONFIGURATION
 # ============================================================================
-PARALLEL_JOBS=12  # Number of experiments to run simultaneously
-
-# Validate configuration
-TOTAL_CPUS=$SLURM_CPUS_PER_TASK
-if [ $PARALLEL_JOBS -gt $TOTAL_CPUS ]; then
-    echo "ERROR: PARALLEL_JOBS ($PARALLEL_JOBS) exceeds available CPUs ($TOTAL_CPUS)"
-    echo "Either reduce PARALLEL_JOBS or increase --cpus-per-task in SBATCH directives"
-    exit 1
-fi
-
-# Calculate CPUs per experiment
-MAX_CPU_CORES=$((TOTAL_CPUS / PARALLEL_JOBS))
+PARALLEL_JOBS=16  # Number of experiments to run simultaneously
+MAX_CPU_CORES=$SLURM_CPUS_PER_TASK  # CPUs per experiment (1)
+# Note: No explicit memory limit per experiment - let SLURM divide fairly
 
 echo "=========================================="
 echo "Resource Allocation"
 echo "=========================================="
-echo "Total CPUs available: $TOTAL_CPUS"
-echo "Parallel jobs: $PARALLEL_JOBS"
+echo "Total CPUs available: 16"
+echo "Parallel experiments: $PARALLEL_JOBS"
 echo "CPUs per experiment: $MAX_CPU_CORES"
+echo "Memory: Shared from node allocation (no per-step limit)"
 echo "=========================================="
 echo ""
 
@@ -78,7 +63,7 @@ TOTAL_EXPERIMENTS=2750
 
 # Shared directories
 POWDER_STREAM_DIR="/scratch/schuermm-shared/sim_powder_stream_arrays"
-OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_316L_experiments"
+OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_316L_single_track"
 
 # Calculate start and end indices for this batch
 START_IDX=$((BATCH_ID * EXPERIMENTS_PER_BATCH))
@@ -102,7 +87,6 @@ echo "Batch output directory: $BATCH_OUTPUT_DIR"
 echo ""
 
 # Generate parameter combinations for this batch
-# Full factorial: Power(11) × Diameter(5) × Feed(5) × Speed(10) = 2,750
 
 PARAM_FILE="$BATCH_OUTPUT_DIR/parameters.txt"
 > "$PARAM_FILE"  # Clear file
@@ -138,41 +122,105 @@ if [ $ACTUAL_COUNT -ne $BATCH_SIZE ]; then
     echo "WARNING: Expected $BATCH_SIZE experiments but generated $ACTUAL_COUNT"
 fi
 
-# Run experiments with GNU Parallel
+# Run experiments with SLURM steps
 echo "=========================================="
 mkdir -p "$BATCH_OUTPUT_DIR/experiments" "$BATCH_OUTPUT_DIR/results"
-echo "Starting parallel execution"
+echo "Starting SLURM step execution"
 echo "Batch size: $ACTUAL_COUNT experiments"
-echo "Estimated time: ~$(((ACTUAL_COUNT * 30 / PARALLEL_JOBS / 60))) hours"
 echo "=========================================="
 echo ""
 
 START_TIME=$(date +%s)
 
-parallel -j $PARALLEL_JOBS --delay 0.2 --colsep '\t' \
-    --joblog "$BATCH_OUTPUT_DIR/parallel.log" \
-    '
-      set -euo pipefail
+# ============================================================================
+# RUN EXPERIMENTS WITH SLURM STEPS
+# Read parameters into memory first to avoid file descriptor issues
+# ============================================================================
 
-      # Create meaningful log names with job and experiment info
-      EXP_NAME="job_'"$SLURM_ARRAY_JOB_ID"'_task_'"$BATCH_ID"'_{1}_P{2}W_D{3}mm_F{4}gmin_V{5}mms"
-      LOG_OUT="'"$BATCH_OUTPUT_DIR"'/results/${EXP_NAME}.out"
-      LOG_ERR="'"$BATCH_OUTPUT_DIR"'/results/${EXP_NAME}.err"
+# Read all parameter lines into array BEFORE launching jobs
+mapfile -t PARAM_LINES < "$PARAM_FILE"
 
-      # Run on local storage
-      LOCAL_DIR="${TMPDIR:-/tmp}/ded_'"$SLURM_JOB_ID"'_'"$SLURM_ARRAY_TASK_ID"'_${PARALLEL_SEQ}"
-      mkdir -p "$LOCAL_DIR"
+echo "Read ${#PARAM_LINES[@]} parameter combinations into memory"
 
-      python run_single_track_experiment.py -m {1} -p {2} -d {3} -f {4} -v {5} \
-        --powder-stream-dir "'"$POWDER_STREAM_DIR"'" \
-        --output-dir "$LOCAL_DIR" \
-        --max-cpu-cores '"$MAX_CPU_CORES"' \
-        > "$LOG_OUT" 2> "$LOG_ERR"
+# Create detailed launch log
+LAUNCH_LOG="$BATCH_OUTPUT_DIR/launch.log"
+echo "Timestamp	ExpNum	Material	Power	Diameter	Feed	Speed" > "$LAUNCH_LOG"
 
-      # Sync results back to shared storage
-      rsync -a --partial --inplace "$LOCAL_DIR"/ "'"$BATCH_OUTPUT_DIR"'/experiments/"
-      rm -rf "$LOCAL_DIR"
-    ' :::: "$PARAM_FILE"
+exp_num=0
+for line in "${PARAM_LINES[@]}"; do
+    
+    # Parse the tab-separated line
+    IFS=$'\t' read -r MATERIAL POWER DIAMETER FEED SPEED <<< "$line"
+    
+    # Create meaningful log names (including experiment number for easy correlation)
+    EXP_NAME="exp_${exp_num}_job_${SLURM_ARRAY_JOB_ID}_task_${BATCH_ID}_${MATERIAL}_P${POWER}W_D${DIAMETER}mm_F${FEED}gmin_V${SPEED}mms"
+    LOG_OUT="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.out"
+    LOG_ERR="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.err"
+    
+    # Run on local storage
+    LOCAL_DIR="${TMPDIR:-/tmp}/ded_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_exp_${exp_num}"
+    
+    # Log launch with timestamp
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "$TIMESTAMP	$exp_num	$MATERIAL	$POWER	$DIAMETER	$FEED	$SPEED" >> "$LAUNCH_LOG"
+    echo "[$TIMESTAMP] Launching experiment $((exp_num + 1))/$ACTUAL_COUNT: ${MATERIAL} P=${POWER}W D=${DIAMETER}mm F=${FEED}g/min V=${SPEED}mm/s"
+    
+    # Use srun to create SLURM job step
+    srun --ntasks=1 \
+         --cpus-per-task=$MAX_CPU_CORES \
+         --exclusive \
+         bash -c "
+           set -uo pipefail
+           mkdir -p '$LOCAL_DIR'
+           
+           # Run Python and capture exit code
+           python run_single_track_experiment.py \
+             -m $MATERIAL -p $POWER -d $DIAMETER -f $FEED -v $SPEED \
+             --powder-stream-dir '$POWDER_STREAM_DIR' \
+             --output-dir '$LOCAL_DIR' \
+             --max-cpu-cores $MAX_CPU_CORES \
+             --experiment-id exp_${exp_num} \
+             > '$LOG_OUT' 2> '$LOG_ERR'
+           PYTHON_EXIT=\$?
+           
+           # Mark failed experiments
+           if [ \$PYTHON_EXIT -ne 0 ]; then
+               echo \"ERROR: Python exited with code \$PYTHON_EXIT\" >> '$LOG_ERR'
+               touch '$LOCAL_DIR/FAILED'
+           fi
+           
+           # ALWAYS sync results back to shared storage (even on failure)
+           rsync -a --partial --inplace '$LOCAL_DIR'/ '$BATCH_OUTPUT_DIR/experiments/' || true
+
+           # Rename experiment directory to include exp number
+           EXP_DIR=$(find '$BATCH_OUTPUT_DIR/experiments/' -maxdepth 1 -type d -name '${MATERIAL}_P*' -newer '$LOCAL_DIR' 2>/dev/null | head -1)
+           if [ -n "$EXP_DIR" ]; then
+               BASENAME=$(basename "$EXP_DIR")
+               mv "$EXP_DIR" "$(dirname "$EXP_DIR")/exp_${exp_num}_$BASENAME"
+           fi
+           
+           # ALWAYS cleanup temp directory
+           rm -rf '$LOCAL_DIR'
+           
+           # Exit with original Python exit code (SLURM records this)
+           exit \$PYTHON_EXIT
+         " &
+    
+    exp_num=$((exp_num + 1))
+    
+done  # End of for loop through PARAM_LINES array
+
+# Check if loop completed all experiments
+LAUNCHED_COUNT=$exp_num
+echo ""
+echo "Loop completed. Launched $LAUNCHED_COUNT experiments (expected $ACTUAL_COUNT)"
+if [ $LAUNCHED_COUNT -lt $ACTUAL_COUNT ]; then
+    echo "WARNING: Loop stopped early! Only launched $LAUNCHED_COUNT/$ACTUAL_COUNT"
+fi
+
+echo ""
+echo "Waiting for all experiments to complete..."
+wait
 
 EXIT_CODE=$?
 END_TIME=$(date +%s)
@@ -182,7 +230,7 @@ ELAPSED_MINS=$(((ELAPSED % 3600) / 60))
 
 echo ""
 echo "=========================================="
-echo "Parallel execution complete"
+echo "Execution complete"
 echo "Exit code: $EXIT_CODE"
 echo "Total time: ${ELAPSED_HOURS}h ${ELAPSED_MINS}m"
 echo "=========================================="
@@ -191,9 +239,6 @@ echo "=========================================="
 echo ""
 echo "Analyzing results..."
 echo ""
-
-SUCCESS_COUNT=$(awk 'NR > 1 && $7 == 0' "$BATCH_OUTPUT_DIR/parallel.log" 2>/dev/null | wc -l || echo 0)
-echo "Successful jobs: $SUCCESS_COUNT / $ACTUAL_COUNT"
 
 # Check output directories
 OUTPUT_DIRS=$(find "$BATCH_OUTPUT_DIR/experiments" -name "316L_P*" -type d 2>/dev/null | wc -l)
@@ -208,6 +253,24 @@ echo "CSV files created: $CSV_FILES"
 echo "Thermal HDF5 files: $H5_THERMAL"
 echo "Activation HDF5 files: $H5_ACTIVATION"
 
+# Count successes
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+for err_file in "$BATCH_OUTPUT_DIR/results"/*.err; do
+    if [ -f "$err_file" ]; then
+        # Ignore srun retry messages, only count actual errors
+        if grep -q "ERROR\|Traceback\|Exception" "$err_file" 2>/dev/null; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        else
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        fi
+    fi
+done
+
+echo ""
+echo "Successful jobs: $SUCCESS_COUNT / $ACTUAL_COUNT"
+echo "Failed jobs: $FAIL_COUNT / $ACTUAL_COUNT"
+
 echo ""
 echo "=========================================="
 echo "Batch $BATCH_ID Summary"
@@ -217,18 +280,23 @@ if [ $EXIT_CODE -eq 0 ] && [ "$SUCCESS_COUNT" -eq "$ACTUAL_COUNT" ]; then
     echo "✓ All experiments completed successfully!"
     echo ""
     echo "Output location: $BATCH_OUTPUT_DIR/experiments"
-    echo "Parallel log: $BATCH_OUTPUT_DIR/parallel.log"
+    echo "Launch log: $BATCH_OUTPUT_DIR/launch.log"
 else
     echo "✗ Some experiments failed or incomplete"
     echo ""
     echo "Check logs:"
-    echo "  Main log: $BATCH_OUTPUT_DIR/parallel.log"
+    echo "  Launch log: $BATCH_OUTPUT_DIR/launch.log"
     echo "  Individual results: $BATCH_OUTPUT_DIR/results/"
     echo ""
-    echo "Failed experiments:"
-    awk 'NR > 1 && $7 != 0' "$BATCH_OUTPUT_DIR/parallel.log"
+    if [ $FAIL_COUNT -gt 0 ]; then
+        echo "Failed experiments: $FAIL_COUNT"
+        echo "Check .err files in $BATCH_OUTPUT_DIR/results/ for details"
+    fi
 fi
 
+echo ""
+echo "Note: .err files may contain 'nodes busy' messages during queueing."
+echo "      These are normal SLURM scheduling messages, not errors."
 echo ""
 echo "End time: $(date)"
 echo "=========================================="

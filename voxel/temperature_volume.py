@@ -13,6 +13,10 @@ from utils.visualization_utils import find_surface, sample_at_surface, ensure_ax
 
 from voxel.heat_diffusion_conv import HeatDiffusionConvolution
 
+class MeltPoolBoundaryError(ValueError):
+    """Exception raised when melt pool extends beyond simulation domain boundaries."""
+    pass
+
 class TrackTemperature:
 
     """Tracks temperature evolution in a voxel volume."""
@@ -214,6 +218,27 @@ class TrackTemperature:
                 'max_temp': np.max(self.temperature),
                 'voxel_center': (x_center, y_center, z_center)
             }
+
+        # Check if melt pool extends to domain boundaries
+        molten_voxels = np.argwhere(melt_mask)
+        if len(molten_voxels) > 0:
+            x_min, y_min, z_min = molten_voxels.min(axis=0)
+            x_max, y_max, z_max = molten_voxels.max(axis=0)
+
+            boundaries_hit = []
+            if x_min == 0: boundaries_hit.append("X_min")
+            if x_max == self.temperature.shape[0] - 1: boundaries_hit.append("X_max")
+            if y_min == 0: boundaries_hit.append("Y_min")
+            if y_max == self.temperature.shape[1] - 1: boundaries_hit.append("Y_max")
+            if z_min == 0: boundaries_hit.append("Z_min")
+            if z_max == self.temperature.shape[2] - 1: boundaries_hit.append("Z_max")
+
+            if boundaries_hit:
+                raise MeltPoolBoundaryError(
+                    f"Melt pool extends to domain boundary: {boundaries_hit}. "
+                    f"Max temp: {np.max(self.temperature):.1f}K at voxel ({x_center},{y_center},{z_center}). "
+                    f"Domain too small - increase size."
+                )
 
         # Find coordinates of maximum temperature
 

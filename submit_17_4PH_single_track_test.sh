@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ded_316L_single_track_test
+#SBATCH --job-name=ded_17-4PH_single_track_test
 #SBATCH --nodes=1
 #SBATCH --ntasks=16
 #SBATCH --cpus-per-task=1
@@ -9,13 +9,13 @@
 #SBATCH --mem=0
 #SBATCH --array=0
 
-# Test submission script for 316L single-track experiments
+# Test submission script for 17-4PH single-track experiments
 # Reduced parameter set: 32 total experiments
 # 16 parallel experiments × 1 CPU each
 # Uses SLURM steps instead of GNU Parallel
 
 echo "=========================================="
-echo "DED 316L Single-Track TEST Run"
+echo "DED 17-4PH Single-Track TEST Run"
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
@@ -55,14 +55,14 @@ echo "=========================================="
 echo ""
 
 # Configuration
-MATERIAL="316L"
+MATERIAL="17-4PH"
 BATCH_ID=$SLURM_ARRAY_TASK_ID
 EXPERIMENTS_PER_BATCH=32  # Test with only 32 experiments
 TOTAL_EXPERIMENTS=32
 
 # Shared directories
 POWDER_STREAM_DIR="/scratch/schuermm-shared/sim_powder_stream_arrays"
-OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_316L_single_track_TEST"  # Separate test directory
+OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_17_4PH_single_track_TEST"  # Separate test directory
 
 # Calculate start and end indices for this batch
 START_IDX=$((BATCH_ID * EXPERIMENTS_PER_BATCH))
@@ -157,7 +157,7 @@ for line in "${PARAM_LINES[@]}"; do
     LOG_OUT="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.out"
     LOG_ERR="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.err"
     
-    # Run on local storage with exp number prefix in directory structure
+    # Run on local storage
     LOCAL_DIR="${TMPDIR:-/tmp}/ded_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_exp_${exp_num}"
     
     # Log launch with timestamp
@@ -191,6 +191,13 @@ for line in "${PARAM_LINES[@]}"; do
            
            # ALWAYS sync results back to shared storage (even on failure)
            rsync -a --partial --inplace '$LOCAL_DIR'/ '$BATCH_OUTPUT_DIR/experiments/' || true
+
+           # Rename experiment directory to include exp number
+           EXP_DIR=$(find '$BATCH_OUTPUT_DIR/experiments/' -maxdepth 1 -type d -name '${MATERIAL}_P*' -newer '$LOCAL_DIR' 2>/dev/null | head -1)
+           if [ -n "$EXP_DIR" ]; then
+               BASENAME=$(basename "$EXP_DIR")
+               mv "$EXP_DIR" "$(dirname "$EXP_DIR")/exp_${exp_num}_$BASENAME"
+           fi
            
            # ALWAYS cleanup temp directory
            rm -rf '$LOCAL_DIR'
@@ -234,7 +241,7 @@ echo "Analyzing results..."
 echo ""
 
 # Check output directories
-OUTPUT_DIRS=$(find "$BATCH_OUTPUT_DIR/experiments" -name "316L_P*" -type d 2>/dev/null | wc -l)
+OUTPUT_DIRS=$(find "$BATCH_OUTPUT_DIR/experiments" -name "17-4PH_P*" -type d 2>/dev/null | wc -l)
 echo "Output directories created: $OUTPUT_DIRS"
 
 # Check for key output files

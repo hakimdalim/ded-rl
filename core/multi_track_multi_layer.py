@@ -79,7 +79,7 @@ class ProgressTracker:
         return (
                 (self._prev_track is None and self.current_track is not None) or
                 (self._prev_track is not None and self.current_track != self._prev_track) or
-                self._prev_progress >= 1.0
+                self._prev_progress >= 1.0 - 1e-9  # Account for floating point errors
         )
 
     @property
@@ -90,7 +90,7 @@ class ProgressTracker:
             return self._last_step_state['track_just_completed']
 
         # During step: check current progress
-        return self._raw_track_progress >= 1.0
+        return self._raw_track_progress >= 1.0 - 1e-9  # Account for floating point errors
 
     @property
     def layer_just_started(self) -> bool:
@@ -152,7 +152,7 @@ class ProgressTracker:
         }
 
         # If track is complete, reset progress for next track
-        if self._raw_track_progress >= 1.0:
+        if self._raw_track_progress >= 1.0 - 1e-9:  # Account for floating point errors
             self._raw_track_progress = 0.0
             self.current_y = None
             self.init_next_track = True

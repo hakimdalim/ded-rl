@@ -1,21 +1,23 @@
 #!/bin/bash
-#SBATCH --job-name=ded_316L_single_track_test
+#SBATCH --job-name=ded_316L_single_track_single_batch_test
 #SBATCH --nodes=1
 #SBATCH --ntasks=16
 #SBATCH --cpus-per-task=1
 #SBATCH --exclusive
-#SBATCH --time=02:00:00
+#SBATCH --time=120:00:00
 #SBATCH --partition=epyc-256
 #SBATCH --mem=0
 #SBATCH --array=0
 
-# Test submission script for 316L single-track experiments
-# Reduced parameter set: 32 total experiments
+# Single batch test for 316L production - tests one full batch (275 experiments)
+# Mirrors production conditions exactly but runs only batch 0
+# Full factorial design: 11×5×5×10 = 2,750 experiments
+# Split across 10 job arrays, each handling 275 experiments
 # 16 parallel experiments × 1 CPU each
 # Uses SLURM steps instead of GNU Parallel
 
 echo "=========================================="
-echo "DED 316L Single-Track TEST Run"
+echo "DED 316L Single Batch Test (Production Size)"
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
@@ -57,12 +59,12 @@ echo ""
 # Configuration
 MATERIAL="316L"
 BATCH_ID=$SLURM_ARRAY_TASK_ID
-EXPERIMENTS_PER_BATCH=32  # Test with only 32 experiments
-TOTAL_EXPERIMENTS=32
+EXPERIMENTS_PER_BATCH=275
+TOTAL_EXPERIMENTS=2750
 
 # Shared directories
 POWDER_STREAM_DIR="/scratch/schuermm-shared/sim_powder_stream_arrays"
-OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_316L_single_track_TEST"  # Separate test directory
+OUTPUT_BASE_DIR="/scratch/schuermm-shared/ded_316L_single_track_SINGLE_BATCH_TEST"
 
 # Calculate start and end indices for this batch
 START_IDX=$((BATCH_ID * EXPERIMENTS_PER_BATCH))
@@ -86,16 +88,15 @@ echo "Batch output directory: $BATCH_OUTPUT_DIR"
 echo ""
 
 # Generate parameter combinations for this batch
-# Test design: 4 powers × 2 diameters × 2 feeds × 2 speeds = 32 experiments
 
 PARAM_FILE="$BATCH_OUTPUT_DIR/parameters.txt"
 > "$PARAM_FILE"  # Clear file
 
-# Reduced parameter ranges for testing
-POWERS=(600 900 1200 1500)           # 4 values (was 11)
-DIAMETERS=(0.5 1.8)                  # 2 values (was 5)
-FEEDS=(2.0 4.0)                      # 2 values (was 5)
-SPEEDS=(2 20)                        # 2 values (was 10)
+# Parameter ranges
+POWERS=(600 700 800 900 1000 1100 1200 1300 1400 1500 1600)
+DIAMETERS=(0.5 0.825 1.15 1.475 1.8)
+FEEDS=(2.0 2.5 3.0 3.5 4.0)
+SPEEDS=(2 4 6 8 10 12 14 16 18 20)
 
 echo "Generating parameter combinations..."
 
@@ -157,7 +158,7 @@ for line in "${PARAM_LINES[@]}"; do
     LOG_OUT="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.out"
     LOG_ERR="$BATCH_OUTPUT_DIR/results/${EXP_NAME}.err"
     
-    # Run on local storage with exp number prefix in directory structure
+    # Run on local storage
     LOCAL_DIR="${TMPDIR:-/tmp}/ded_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_exp_${exp_num}"
     
     # Log launch with timestamp
@@ -191,16 +192,17 @@ for line in "${PARAM_LINES[@]}"; do
            
            # ALWAYS sync results back to shared storage (even on failure)
            rsync -a --partial --inplace '$LOCAL_DIR'/ '$BATCH_OUTPUT_DIR/experiments/' || true
-           
+
+
            # ALWAYS cleanup temp directory
            rm -rf '$LOCAL_DIR'
-           
+
            # Exit with original Python exit code (SLURM records this)
            exit \$PYTHON_EXIT
          " &
-    
+
     exp_num=$((exp_num + 1))
-    
+
 done  # End of for loop through PARAM_LINES array
 
 # Check if loop completed all experiments
