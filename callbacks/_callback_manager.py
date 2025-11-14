@@ -1,5 +1,6 @@
 import warnings
 from typing import List
+
 from callbacks._base_callbacks import SimulationEvent, BaseCallback
 from callbacks.completion_callbacks import BaseCompletionCallback, SimulationComplete
 from callbacks.error_callbacks import ErrorCompletionCallback

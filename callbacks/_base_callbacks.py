@@ -36,8 +36,7 @@ class BaseCallback(ABC):
 
     def __init__(
             self,
-            events: Union[SimulationEvent, List[SimulationEvent], 
-                          Set[SimulationEvent]],
+            events: Union[SimulationEvent, List[SimulationEvent], Set[SimulationEvent]],
             enabled: bool = True,
             **kwargs
     ):

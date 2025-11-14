@@ -3,11 +3,11 @@
 # -----------------------------------------------------------------------------
 # Unified camera module with a shared base class and two projection variants:
 # - OrthographicCamera (parallel rays; fixed plane size in meters)
-# - PerspectiveCamera  (converging rays; FOV-driven projection) ###FIXME: relevant for Hakim
+# - PerspectiveCamera  (converging rays; FOV-driven projection)
 #
 # Optional following behavior is provided via a light-weight mixin that can be
 # combined with either camera variant:
-# - FollowingOrthographicCamera ###FIXME: FollowingOrthographicCamera for Hakim
+# - FollowingOrthographicCamera
 # - FollowingPerspectiveCamera
 #
 # The public API mirrors your previous script:
