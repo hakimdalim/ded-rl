@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Dict, Tuple
 from utils.vectorize_inputs import prepare_points
-import gc
 
 
 class VoxelPowderStream:
@@ -13,9 +12,8 @@ class VoxelPowderStream:
     def __init__(
             self,
             voxel_path: str,
-            nozzle_offset_slices: int = 50,
-            auto_detect_working_distance: bool = True,
-            cached_metadata: dict = None,
+            outlet_offset: float = 1.1635e-3,
+            nozzle_height: float = 0.015,
             visualize: bool = True
     ):
         """
@@ -24,9 +22,8 @@ class VoxelPowderStream:
 
         Args:
             voxel_path: Path to .npz file containing intensity data
-            nozzle_offset_slices: Number of slices between array top and nozzle (default: 50)
-            auto_detect_working_distance: If True, detect working distance from focal point (recommended)
-            cached_metadata: Pre-calculated metadata (focal point, working distance) to avoid recalculation
+            outlet_offset: Distance from outlet to top of voxel array (1.1635mm)
+            nozzle_height: Height of nozzle above substrate (15mm)
             visualize: Whether to show verification plots
         """
         # Load voxel data
@@ -35,51 +32,23 @@ class VoxelPowderStream:
         print("=" * 60)
 
         data = np.load(voxel_path)
-        raw_field = data['stream']
+        raw_field = data['data']
         print(f"Raw array shape: {raw_field.shape}")
 
         # Transpose from (y, x, z) to (z, y, x) if needed
         if raw_field.shape[2] > max(raw_field.shape[0], raw_field.shape[1]):
-            transposed_field = np.transpose(raw_field, (2, 0, 1))
-            print(f"Transposed to (z, y, x): {transposed_field.shape}")
+            self.field = np.transpose(raw_field, (2, 0, 1))
+            print(f"Transposed to (z, y, x): {self.field.shape}")
         else:
-            transposed_field = raw_field
-
-        # FIRST: Detect focal point in full array (or use cached if available)
-        if cached_metadata is not None and 'iz_substrate_original' in cached_metadata:
-            iz_focal_full = cached_metadata['iz_substrate_original']
-            print(f"Using cached focal point (original coordinates): slice {iz_focal_full}")
-        else:
-            # Detect focal point in full transposed array
-            nz_full = transposed_field.shape[0]
-            max_intensities_per_slice = np.array([np.max(transposed_field[iz, :, :]) for iz in range(nz_full)])
-            iz_focal_full = np.argmax(max_intensities_per_slice)
-            print(f"Detected focal point (original coordinates): slice {iz_focal_full}")
-
-        # THEN: Crop centered on focal point (keep ±quartile range around focal point)
-        self.field, self.crop_offsets, iz_focal_cropped = self._crop_around_focal_point(transposed_field, iz_focal_full)
-
-        # Calculate memory savings BEFORE deleting
-        original_size = transposed_field.nbytes / (1024 ** 2)  # MB
-        cropped_size = self.field.nbytes / (1024 ** 2)  # MB
-        savings_pct = (1 - cropped_size / original_size) * 100
-        nz_original = transposed_field.shape[0]
-
-        # Explicitly delete the original arrays to free memory immediately
-        del raw_field
-        del transposed_field
-        del data
-        gc.collect()  # Force garbage collection
-
-        print(f"Cropped to: {self.field.shape} (z, y, x)")
-        print(f"Crop offsets (z, y, x): {self.crop_offsets}")
-
-        # Calculate memory savings
-        print(f"Memory: {cropped_size:.1f} MB (was {original_size:.1f} MB, saved {savings_pct:.1f}%)")
+            self.field = raw_field
 
         # Store dimensions
         self.shape = self.field.shape
         nz, ny, nx = self.shape
+
+        # Store parameters
+        self.outlet_offset = outlet_offset
+        self.nozzle_height = nozzle_height
 
         # Define voxel spacing in meters
         mm_to_m = 1e-3
@@ -89,66 +58,21 @@ class VoxelPowderStream:
             0.02327 * mm_to_m  # Z spacing: 2.327e-5 m
         )
 
-        # Store parameters
-        self.nozzle_offset_slices = nozzle_offset_slices
-        self.nozzle_offset_distance = nozzle_offset_slices * self.spacing[2]  # Convert to meters
+        # Set up Z coordinates
+        # The nozzle is at nozzle_height (15mm above substrate)
+        # The outlet is outlet_offset below the nozzle
+        # The top of the voxel array is outlet_offset below the outlet
+        self.z_top = self.nozzle_height - 2 * self.outlet_offset  # Top of voxel array
+        self.z_bottom = self.z_top - nz * self.spacing[2]  # Bottom of voxel array
 
-        # Focal point in cropped coordinates (for array operations)
-        self.iz_substrate = iz_focal_cropped
+        # Find which slice index corresponds to z=0 (substrate)
+        # We need to solve: z_coordinate = z_top - iz * spacing[2] = 0
+        # Therefore: iz = z_top / spacing[2]
+        self.iz_substrate = int(round(self.z_top / self.spacing[2]))
+        self.iz_substrate = np.clip(self.iz_substrate, 0, nz - 1)
 
-        # Store original focal point index for caching (before cropping)
-        self.iz_substrate_original = iz_focal_full
-
-        # Calculate working distance
-        # CRITICAL: Need to account for slices cropped from the top of the array
-        #
-        # In original array (before crop):
-        #   - Top slice index: nz_original - 1
-        #   - Focal point: iz_focal_original
-        #   - Distance substrate to original top: (nz_original - 1 - iz_focal_original) slices
-        #   - Nozzle is nozzle_offset_slices above original top
-        #   - Working distance = distance_to_top + nozzle_offset
-        #
-        # After cropping:
-        #   - We cropped from z_min to z_max of original array
-        #   - Original array had nz_original slices (indexed 0 to nz_original-1)
-        #   - Slices removed from top = (nz_original - 1) - (z_min + nz - 1) = nz_original - z_min - nz
-        #   - The nozzle is still at the same physical location
-        #   - So nozzle is now (slices_removed_from_top + nozzle_offset_slices) above cropped top
-
-        # Get original array size from transposed field
-
-        z_min = self.crop_offsets[0]
-
-        # Slices between cropped top and original top
-        slices_removed_from_top = (nz_original - 1) - (z_min + nz - 1)
-
-        # Effective nozzle offset relative to cropped array
-        effective_nozzle_offset = slices_removed_from_top + nozzle_offset_slices
-
-        # Working distance calculation
-        distance_substrate_to_array_top = ((nz - 1) - self.iz_substrate) * self.spacing[2]
-        self.z_top = distance_substrate_to_array_top
-        self.z_bottom = self.z_top - nz * self.spacing[2]
-        working_distance_slices = ((nz - 1) - self.iz_substrate) + effective_nozzle_offset
-        self.detected_nozzle_height = working_distance_slices * self.spacing[2]
-
-        print(f"Substrate at slice index: {self.iz_substrate} (cropped array), z=0.000 mm (by definition)")
-        print(f"Distance from substrate to cropped array top: {distance_substrate_to_array_top * 1000:.3f} mm")
-        print(f"Slices removed from original top: {slices_removed_from_top}")
-        print(f"Effective nozzle offset (relative to cropped top): {effective_nozzle_offset} slices")
-        print(
-            f"Nozzle offset (array top to nozzle): {self.nozzle_offset_distance * 1000:.3f} mm ({nozzle_offset_slices} slices)")
-        print(
-            f"Detected nozzle height (working distance): {self.detected_nozzle_height * 1000:.3f} mm ({working_distance_slices} slices)")
-
-        # DEBUG: Check if there's actually powder at this slice
-        substrate_intensity = np.sum(self.field[self.iz_substrate, :, :])
-        max_intensity_array = np.max(self.field)
-        print(f"DEBUG: Intensity at substrate slice: {substrate_intensity:.6f}")
-        print(f"DEBUG: Max intensity in entire array: {max_intensity_array:.6f}")
-        if substrate_intensity < 0.01 * max_intensity_array:
-            print(f"WARNING: Very low intensity at calculated substrate slice!")
+        actual_z_substrate = self.z_top - self.iz_substrate * self.spacing[2]
+        print(f"Substrate slice: index {self.iz_substrate}, z={actual_z_substrate * 1000:.3f} mm")
 
         # Find powder stream center at substrate
         self._find_and_align_center()
@@ -163,15 +87,6 @@ class VoxelPowderStream:
 
         # Precompute values
         self.max_intensity = np.max(self.field)
-
-        # Check if array is empty
-        if self.max_intensity == 0:
-            raise ValueError(
-                f"Powder stream array is completely empty (all zeros)! "
-                f"Array shape: {self.shape}. "
-                f"File may be corrupted or incorrectly generated."
-            )
-
         self.boundary_threshold = 0.135 * self.max_intensity
         self._calibration_cache = {}
 
@@ -245,10 +160,6 @@ class VoxelPowderStream:
                     z_coord = self.z_top - iz * self.spacing[2]
                     print(f"Found powder stream at slice {iz} (z={z_coord * 1000:.2f} mm)")
 
-                    # FIX: Update substrate index to where powder actually is
-                    self.iz_substrate = iz
-                    print(f"Updated iz_substrate from calculated value to actual powder location: {iz}")
-
                     # Use max intensity for this slice
                     max_iy, max_ix = np.unravel_index(np.argmax(slice_test), slice_test.shape)
                     self.powder_center_px_x = float(max_ix)
@@ -257,40 +168,10 @@ class VoxelPowderStream:
                     break
 
             if not found_powder:
-                # No powder found anywhere - this is a critical error
-                raise ValueError(
-                    f"No powder stream found in array! "
-                    f"Max intensity in array: {self.max_intensity:.6f}. "
-                    f"Expected powder stream file may be empty or corrupted. "
-                    f"Check powder stream generation."
-                )
-
-    def _detect_focal_point_z(self) -> Tuple[int, float]:
-        """
-        Detect the focal point (maximum intensity) along Z-axis using loaded field.
-
-        Returns:
-            (iz_focal, max_intensity_at_focal)
-            - iz_focal: Index of slice with maximum intensity
-            - max_intensity_at_focal: Maximum intensity value at that slice
-        """
-        nz = self.shape[0]
-
-        # Calculate maximum intensity in each Z-slice
-        max_intensities_per_slice = np.array([np.max(self.field[iz, :, :]) for iz in range(nz)])
-
-        # Find slice with overall maximum
-        iz_focal = np.argmax(max_intensities_per_slice)
-        max_intensity = max_intensities_per_slice[iz_focal]
-
-        print(f"\n{'=' * 60}")
-        print("AUTO-DETECTED FOCAL POINT")
-        print(f"{'=' * 60}")
-        print(f"Focal point at slice index: {iz_focal}")
-        print(f"Maximum intensity at focal point: {max_intensity:.6f}")
-        print(f"{'=' * 60}\n")
-
-        return iz_focal, max_intensity
+                # Fallback to array center
+                self.powder_center_px_x = self.shape[2] // 2
+                self.powder_center_px_y = self.shape[1] // 2
+                print(f"Warning: No significant intensity found, using array center")
 
     def _refine_center_with_gaussian_fit(self, slice_data, ix_center, iy_center, window_size=11):
         """
@@ -322,9 +203,7 @@ class VoxelPowderStream:
                 self.powder_center_px_y = y_start + refined_y_local
 
                 return True
-        except Exception as e:
-            # Gaussian refinement failed - this is non-critical, we can use the peak location
-            print(f"DEBUG: Gaussian refinement failed (non-critical): {e}")
+        except:
             pass
 
         return False
@@ -422,7 +301,7 @@ class VoxelPowderStream:
 
         ax.plot(profile, z_coords * 1000, 'b-', linewidth=2)
         ax.axhline(y=0, color='red', linestyle='--', label='Substrate')
-        ax.axhline(y=self.detected_nozzle_height * 1000, color='orange', linestyle='--', label='Nozzle')
+        ax.axhline(y=self.nozzle_height * 1000, color='orange', linestyle='--', label='Nozzle')
         ax.set_xlabel('Intensity')
         ax.set_ylabel('Z (mm)')
         ax.set_title('Vertical Profile at (0,0)')
@@ -550,26 +429,9 @@ class VoxelPowderStream:
             # Get substrate cross-section
             cross_section = self.field[self.iz_substrate, :, :]
 
-            # DEBUG: Check what we're getting
-            total_intensity = np.sum(cross_section)
-            print(
-                f"DEBUG calibration: iz_substrate={self.iz_substrate}, total intensity at slice={total_intensity:.6f}")
-
             # Identify pixels actually in the powder stream (above threshold)
             in_stream_mask = cross_section > self.boundary_threshold
             pixels_in_stream = np.sum(in_stream_mask)
-
-            # DEBUG: Detailed slice analysis
-            print(f"DEBUG: Slice shape: {cross_section.shape}")
-            print(
-                f"DEBUG: Slice min/max/mean: {np.min(cross_section):.6f} / {np.max(cross_section):.6f} / {np.mean(cross_section):.6f}")
-            print(f"DEBUG: Pixels > 0: {np.sum(cross_section > 0)}")
-            print(f"DEBUG: Pixels > threshold ({self.boundary_threshold:.6f}): {pixels_in_stream}")
-            if hasattr(self, 'powder_center_px_x') and hasattr(self, 'powder_center_px_y'):
-                center_y = int(self.powder_center_px_y)
-                center_x = int(self.powder_center_px_x)
-                print(
-                    f"DEBUG: Value at powder center pixel [{center_y}, {center_x}]: {cross_section[center_y, center_x]:.6f}")
 
             if pixels_in_stream > 0:
                 # Calculate effective area of powder stream at substrate
@@ -602,13 +464,8 @@ class VoxelPowderStream:
                 print(f"  Mass flow check: {total_mass_flow_check * 1e6:.3f} mg/s (input: {m_dot * 1e6:.3f} mg/s)")
 
             else:
-                # No pixels in stream - critical error
-                raise ValueError(
-                    f"No powder stream pixels found at substrate (iz={self.iz_substrate})! "
-                    f"Total intensity at slice: {total_intensity:.6f}, "
-                    f"Boundary threshold: {self.boundary_threshold:.6f}. "
-                    f"Powder stream may not reach substrate or array geometry is incorrect."
-                )
+                self._calibration_cache[key] = 0
+                print("Warning: No intensity at substrate for calibration")
 
         return self._calibration_cache[key]
 
@@ -654,76 +511,6 @@ class VoxelPowderStream:
         intensity = self.field[iz, iy, ix]
         return intensity > self.boundary_threshold
 
-    def get_detected_nozzle_height(self) -> float:
-        """
-        Get the detected or configured nozzle height.
-
-        Returns:
-            Nozzle height in meters
-        """
-        return self.detected_nozzle_height
-
-    def get_metadata(self) -> dict:
-        """
-        Get metadata about the powder stream for caching.
-
-        Returns:
-            Dictionary with focal point and working distance information
-        """
-        return {
-            'iz_substrate': int(self.iz_substrate),  # Cropped coordinates
-            'iz_substrate_original': int(self.iz_substrate_original),  # Original coordinates for cache reuse
-            'detected_nozzle_height': float(self.detected_nozzle_height),
-            'z_top': float(self.z_top),
-            'z_bottom': float(self.z_bottom),
-            'nozzle_offset_slices': int(self.nozzle_offset_slices),
-            'max_intensity': float(self.max_intensity)
-        }
-
-    def _crop_around_focal_point(self, field: np.ndarray, iz_focal: int) -> tuple:
-        """
-        Crop 3D array centered on focal point, keeping central 50% in each dimension.
-        For Z-axis: crops centered on focal point
-        For X,Y: crops centered on array center
-
-        Args:
-            field: 3D array (z, y, x) to crop
-            iz_focal: Index of focal point in full array
-
-        Returns:
-            cropped_field: Cropped array
-            offsets: Tuple of (z_offset, y_offset, x_offset) indicating crop start positions
-            iz_focal_updated: Updated focal point index (should always be at center of cropped Z)
-        """
-        nz, ny, nx = field.shape
-
-        # Z-axis: crop centered on focal point (keep 50% = ±25% around focal point)
-        z_half_range = nz // 4  # Keep 50% total = nz/2 slices
-        z_min = max(0, iz_focal - z_half_range)
-        z_max = min(nz, iz_focal + z_half_range)
-
-        # Ensure we keep exactly nz//2 slices if possible
-        if z_max - z_min < nz // 2:
-            if z_min == 0:
-                z_max = min(nz, z_min + nz // 2)
-            elif z_max == nz:
-                z_min = max(0, z_max - nz // 2)
-
-        # X,Y axes: crop from center (keep central 50%)
-        y_min = ny // 4
-        y_max = ny - (ny // 4)
-
-        x_min = nx // 4
-        x_max = nx - (nx // 4)
-
-        # Crop WITHOUT copy - just create a view first
-        cropped = field[z_min:z_max, y_min:y_max, x_min:x_max]
-
-        # Update focal point index to cropped coordinates
-        iz_focal_cropped = iz_focal - z_min
-
-        return cropped, (z_min, y_min, x_min), iz_focal_cropped
-
     def powder_stream_boundary_at_z(self, points: np.ndarray, params: Dict) -> np.ndarray:
         """Find boundary height for given (x,y) positions"""
         points = prepare_points(points)
@@ -761,89 +548,101 @@ if __name__ == "__main__":
         'particle_mass': 4.5e-8,
     })
 
-    # Test auto-detection
-    print(f"\n{'=' * 60}")
-    print(f"TESTING AUTO-DETECTION")
-    print(f"{'=' * 60}")
+    # Test three different nozzle heights
+    nozzle_heights = [0.014, 0.015, 0.016]  # 14mm, 15mm, 16mm
+    voxel_streams = []
 
-    # Initialize with auto-alignment
-    voxel_stream = VoxelPowderStream(
-        "_arrays/250422_10%3A36%3A17/target_stack.npz",
-        nozzle_offset_slices=50,
-        auto_detect_working_distance=True,
-        visualize=False
-    )
+    for nozzle_height in nozzle_heights:
+        print(f"\n{'=' * 60}")
+        print(f"TESTING NOZZLE HEIGHT: {nozzle_height * 1000:.0f} mm")
+        print(f"{'=' * 60}")
 
-    print(f"\nTesting concentration at key points...")
-    test_points = np.array([
-        [0, 0, 0],  # Laser position = powder center
-        [0.001, 0, 0],  # 1mm offset in X
-        [0, 0.001, 0],  # 1mm offset in Y
-        [0, 0, 0.001],  # 1mm above substrate
-    ])
+        # Initialize with auto-alignment for this nozzle height
+        voxel_stream = VoxelPowderStream(
+            "_arrays/250422_10%3A36%3A17/target_stack.npz",
+            outlet_offset=1.1635e-3,
+            nozzle_height=nozzle_height,
+            visualize=False  # Turn off individual visualizations
+        )
+        voxel_streams.append(voxel_stream)
 
-    concentrations = voxel_stream.powder_concentration(test_points, params)
-    for pt, conc in zip(test_points, concentrations):
-        print(f"  ({pt[0] * 1000:.1f}, {pt[1] * 1000:.1f}, {pt[2] * 1000:.1f}) mm: {conc:.3f} kg/m³")
+        print(f"\nTesting concentration at key points (nozzle={nozzle_height * 1000:.0f}mm)...")
+        test_points = np.array([
+            [0, 0, 0],  # Laser position = powder center
+            [0.001, 0, 0],  # 1mm offset in X
+            [0, 0.001, 0],  # 1mm offset in Y
+            [0, 0, 0.001],  # 1mm above substrate
+        ])
 
-    # Create visualization
+        concentrations = voxel_stream.powder_concentration(test_points, params)
+        for pt, conc in zip(test_points, concentrations):
+            print(f"  ({pt[0] * 1000:.1f}, {pt[1] * 1000:.1f}, {pt[2] * 1000:.1f}) mm: {conc:.3f} kg/m³")
+
+    # Create comparison visualization
     print("\n" + "=" * 60)
-    print("CREATING VISUALIZATION")
+    print("CREATING COMPARISON VISUALIZATION")
     print("=" * 60)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 
-    # Evaluate concentration field at substrate
+    # Evaluate concentration field at substrate for each nozzle height
     x = np.linspace(-5e-3, 5e-3, 200)
     y = np.linspace(-5e-3, 5e-3, 200)
     X, Y = np.meshgrid(x, y)
     points = np.stack([X, Y, np.zeros_like(X)], axis=-1)
 
-    # Left: concentration at substrate
-    ax = axes[0]
-    concentration = voxel_stream.powder_concentration(points, params)
+    for i, (nozzle_height, voxel_stream) in enumerate(zip(nozzle_heights, voxel_streams)):
+        # Top row: concentration at substrate
+        ax = axes[0, i]
+        concentration = voxel_stream.powder_concentration(points, params)
 
-    im = ax.imshow(concentration.reshape(X.shape),
-                   extent=[X.min() * 1000, X.max() * 1000, Y.min() * 1000, Y.max() * 1000],
-                   origin='lower', cmap='hot', aspect='equal')
+        # Create the image directly without using ThermalPlotter
+        im = ax.imshow(concentration.reshape(X.shape),
+                       extent=[X.min() * 1000, X.max() * 1000, Y.min() * 1000, Y.max() * 1000],
+                       origin='lower', cmap='hot', aspect='equal')
 
-    ax.plot(0, 0, 'g+', markersize=15, markeredgewidth=2, label='Laser/Powder Center')
-    ax.set_title(f'Concentration at Substrate\nWorking Distance: {voxel_stream.detected_nozzle_height * 1000:.1f} mm')
-    ax.set_xlabel('X (mm)')
-    ax.set_ylabel('Y (mm)')
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.set_aspect('equal')
+        # Mark center
+        ax.plot(0, 0, 'g+', markersize=15, markeredgewidth=2, label='Laser/Powder Center')
+        ax.set_title(f'Nozzle Height: {nozzle_height * 1000:.0f} mm\nConcentration at Substrate')
+        ax.set_xlabel('X (mm)')
+        ax.set_ylabel('Y (mm)')
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+        ax.set_aspect('equal')
 
-    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label('Concentration (kg/m³)', rotation=270, labelpad=15)
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label('Concentration (kg/m³)', rotation=270, labelpad=15)
 
-    # Right: XZ cross-section at Y=0
-    ax = axes[1]
-    y_world_0_idx = int(round(voxel_stream.powder_center_px_y))
-    xz_slice = voxel_stream.field[:, y_world_0_idx, :]
+        # Bottom row: XZ cross-section at Y=0
+        ax = axes[1, i]
 
-    extent = [voxel_stream.x_min * 1000, voxel_stream.x_max * 1000,
-              voxel_stream.z_bottom * 1000, voxel_stream.z_top * 1000]
+        # Get the y-index closest to y=0 (powder center)
+        y_world_0_idx = int(round(voxel_stream.powder_center_px_y))
+        xz_slice = voxel_stream.field[:, y_world_0_idx, :]
 
-    im = ax.imshow(xz_slice, origin='lower', extent=extent,
-                   aspect='auto', cmap='hot')
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    ax.axhline(y=0, color='red', linestyle='--', linewidth=1.5, label='Substrate')
-    ax.axvline(x=0, color='green', linestyle=':', alpha=0.7, label='Laser axis')
-    ax.set_xlabel('X (mm)')
-    ax.set_ylabel('Z (mm)')
-    ax.set_title(f'XZ Cross-section at Y=0')
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+        extent = [voxel_stream.x_min * 1000, voxel_stream.x_max * 1000,
+                  voxel_stream.z_bottom * 1000, voxel_stream.z_top * 1000]
 
-    peak_conc = np.max(concentration)
-    print(f"Peak concentration at substrate: {peak_conc:.3f} kg/m³")
+        im = ax.imshow(xz_slice, origin='lower', extent=extent,
+                       aspect='auto', cmap='hot')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        ax.axhline(y=0, color='red', linestyle='--', linewidth=1.5, label='Substrate')
+        ax.axvline(x=0, color='green', linestyle=':', alpha=0.7, label='Laser axis')
+        ax.set_xlabel('X (mm)')
+        ax.set_ylabel('Z (mm)')
+        ax.set_title(f'XZ Cross-section at Y=0\nWorking Distance: {nozzle_height * 1000:.0f} mm')
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
 
-    plt.suptitle('Powder Stream Analysis with Auto-Detection', fontsize=16)
+        # Print peak concentration for comparison
+        peak_conc = np.max(concentration)
+        print(f"Nozzle {nozzle_height * 1000:.0f}mm - Peak concentration at substrate: {peak_conc:.3f} kg/m³")
+
+    plt.suptitle('Powder Stream Analysis: Effect of Nozzle Height on Alignment', fontsize=16)
     plt.tight_layout()
     plt.show()
 
-    # Show detailed visualization
-    print("\nShowing detailed visualization...")
-    voxel_stream._visualize_alignment()
+    # Show individual visualization for the middle nozzle height (15mm)
+    print("\nShowing detailed visualization for 15mm nozzle height...")
+    voxel_streams[1]._visualize_alignment()

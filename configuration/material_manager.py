@@ -24,59 +24,39 @@ class MaterialManager(ParameterManager):
     # Materials directory relative to this file
     MATERIALS_DIR = Path(__file__).parent / "materials"
 
-    # Material file storage mode: 'single-file' or 'multi-file'
-    MATERIAL_FILE_MODE = 'multi-file'  # 'single-file' = all_materials.json, 'multi-file' = individual files
-
     # Feeder calibration constant (g/min per percent)
     FEED_SLOPE_G_PER_MIN_PER_PERCENT = 0.6419423077
 
     # Class-level cache for loaded material JSONs
     _material_cache = {}
-    _all_materials_loaded = False
 
     @classmethod
     def load_material(cls, name: str) -> Dict[str, Any]:
         """
         Load material properties from JSON file with caching.
 
-        Mode controlled by MATERIAL_FILE_MODE class attribute:
-        - 'single-file': Load from all_materials.json
-        - 'multi-file': Load from individual {name}.json files
-
         Args:
-            name: Material name
+            name: Material name (must match JSON filename without extension)
 
         Returns:
             Dictionary with material properties
 
         Raises:
-            FileNotFoundError: If material doesn't exist
+            FileNotFoundError: If material JSON file doesn't exist
+            JSONDecodeError: If JSON file is invalid
         """
         # Check cache first
         if name in cls._material_cache:
             return cls._material_cache[name]
 
-        if cls.MATERIAL_FILE_MODE == 'single-file':
-            # Single-file mode: all_materials.json
-            if not cls._all_materials_loaded:
-                path = cls.MATERIALS_DIR / "all_materials.json"
-                with open(path, 'r', encoding='utf-8') as f:
-                    cls._material_cache = json.load(f)
-                cls._all_materials_loaded = True
+        # Load from file
+        path = cls.MATERIALS_DIR / f"{name}.json"
+        with open(path, 'r') as f:
+            material_data = json.load(f)
 
-            if name not in cls._material_cache:
-                raise FileNotFoundError(f"Material '{name}' not found in all_materials.json")
-
-            return cls._material_cache[name]
-
-        else:
-            # Multi-file mode: individual files
-            path = cls.MATERIALS_DIR / f"{name}.json"
-            with open(path, 'r', encoding='utf-8') as f:
-                material_data = json.load(f)
-
-            cls._material_cache[name] = material_data
-            return material_data
+        # Cache for future use
+        cls._material_cache[name] = material_data
+        return material_data
 
     @staticmethod
     def percent_to_kg_per_s(percent: float) -> float:

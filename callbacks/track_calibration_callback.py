@@ -37,7 +37,7 @@ class TrackCalibrationCallback(BaseCallback):
         original_layer = sim.config.get('layer_spacing', 0.00035)
 
         # Create new temporary simulation for calibration
-        from core.multi_track_multi_layer import MultiTrackMultiLayerSimulation
+        from framework.multi_track_multi_layer import MultiTrackMultiLayerSimulation
 
         calibration_sim = MultiTrackMultiLayerSimulation(
             config=sim.config,
