@@ -1,0 +1,22 @@
+{
+    "name": "iron",
+    "properties": {
+        "density": 7850.0,
+        "specific_heat": 460.0,
+        "thermal_diffusivity": 1.172e-5,
+        "surface_tension": 1.88,
+        "viscosity": 0.0058,
+        "epsilon": 0.013,
+        "laser_absorptivity": 0.6,
+        "melting_temp": 1811.0,
+        "solidus_temp": 1788.0,
+        "liquidus_temp": 1811.0,
+        "latent_heat_of_fusion": 204500.0,
+        "particle_radius": 4.2e-5
+    },
+    "metadata": {
+        "source": "Huang et al. 2019a - Table 1 and Table 2",
+        "temperature": "25°C",
+        "notes": "Pure iron properties used in original DED simulation paper"
+    }
+}

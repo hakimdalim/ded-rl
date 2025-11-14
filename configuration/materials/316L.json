@@ -1,0 +1,332 @@
+{
+    "name": "316L",
+    "properties": {
+        "density": 7904.0,
+        "specific_heat": 520.0,
+        "thermal_diffusivity": 3.2846e-06,
+        "surface_tension": 1.6,
+        "viscosity": 0.0056,
+        "epsilon": 0.35,
+        "laser_absorptivity": 0.50,
+        "melting_temp": 1692.0,
+        "solidus_temp": 1663.0,
+        "liquidus_temp": 1721.0,
+        "latent_heat_of_fusion": 290000.0,
+        "particle_radius": 1.55e-05
+    },
+    "metadata": {
+        "powder_specification": {
+            "manufacturer": "Oerlikon Metco",
+            "product_name": "MetcoAdd 316L-A",
+            "product_order_number": "1093739",
+            "oerlikon_specification_statement": "MetcoAdd 316L is a family of austenitic powders that are similar in chemistry to EN 1.4404 and UNS S31603. MetcoAdd 316L-A specifically conforms to: EN 1.4404, UNS S31603",
+            "specification_note": "This Oerlikon specification determines our primary standard hierarchy: EN/DIN standards are primary (European system), ASTM/UNS are secondary",
+            "particle_size_range": "-45+15 µm",
+            "manufacturer_nominal_values": {
+                "d10": "19 µm",
+                "d50": "30 µm",
+                "d90": "46 µm",
+                "note": "Nominal values from Oerlikon Metco Material Product Data Sheet"
+            },
+            "actual_batch_measurements": {
+                "d10": "20.3 µm",
+                "d50": "~31 µm (estimated from D10/D90 ratio)",
+                "d90": "51.75 µm",
+                "measurement_method": "Laser diffraction using Bettersizer S3 Plus (3P Instruments)",
+                "source": "Platz, J. et al. (2024) 'Fertigung funktional gradierter Materialien auf porösen Metallen durch Laserauftragschweißen', ZWF 119(7-8), pp. 515-519",
+                "note": "Measured values from actual powder batch used in experiments"
+            },
+            "batch_variation": {
+                "d10_difference": "+6.8% larger than nominal",
+                "d90_difference": "+12.5% larger than nominal",
+                "explanation": "Batch-to-batch variation is normal in powder manufacturing. Actual measurements should be performed for each new batch."
+            },
+            "morphology": "Spheroidal",
+            "manufacturing_method": "Inert gas atomized",
+            "apparent_density": ">4 g/cm³"
+        },
+        "standard_designations": {
+            "EN": "1.4404 (X2CrNiMo17-12-2)",
+            "UNS": "S31603",
+            "similar_to": "AISI Type 316L"
+        },
+        "composition_data": {
+            "oerlikon_nominal": {
+                "Fe": "Balance (~65%)",
+                "Cr": "18",
+                "Ni": "12",
+                "Mo": "2",
+                "C": "<0.03",
+                "Other": "<1.0",
+                "source": "Oerlikon Metco Material Product Data Sheet for MetcoAdd 316L-A",
+                "note": "This is YOUR powder composition - the actual material used in experiments"
+            },
+            "nist_srm_1155a": {
+                "Fe": "64.71 ± 0.12",
+                "Cr": "17.803 ± 0.099",
+                "Ni": "12.471 ± 0.056",
+                "Mo": "2.188 ± 0.015",
+                "Mn": "1.593 ± 0.060",
+                "Si": "0.521 ± 0.017",
+                "C": "0.0260 ± 0.0036",
+                "Cu": "0.2431 ± 0.0050",
+                "Co": "0.225 ± 0.018",
+                "source": "Pichler, P. et al. (2020) 'Measurements of thermophysical properties of solid and liquid NIST SRM 316L stainless steel', Journal of Materials Science, Table 1",
+                "note": "NIST Standard Reference Material - certified composition values"
+            },
+            "mills_2002": {
+                "Fe": "65",
+                "Cr": "17",
+                "Ni": "12",
+                "Mo": "2.5",
+                "Mn": "2.0",
+                "Si": "1",
+                "C": "0.08",
+                "Cu": "0.3",
+                "source": "Mills, K.C. (2002) 'Recommended Values of Thermophysical Properties for Selected Commercial Alloys', NPL",
+                "note": "Generic 316L composition used in Mills recommendations"
+            },
+            "composition_similarity_analysis": {
+                "most_similar_to_oerlikon": "NIST SRM 1155a (Pichler 2020)",
+                "comparison": {
+                    "nist_vs_oerlikon": {
+                        "Cr": "17.8 vs 18 (-1.1% difference - VERY CLOSE)",
+                        "Ni": "12.47 vs 12 (+3.9% difference - CLOSE)",
+                        "Mo": "2.19 vs 2 (+9.5% difference - CLOSE)",
+                        "C": "0.026 vs <0.03 (VERY CLOSE)",
+                        "conclusion": "NIST composition is very similar to Oerlikon powder"
+                    },
+                    "mills_vs_oerlikon": {
+                        "Mo": "2.5 vs 2 (+25% difference - SIGNIFICANT)",
+                        "Si": "1.0 vs <1.0 (~50% higher - SIGNIFICANT)",
+                        "Mn": "2.0 vs <1.0 (significantly higher - SIGNIFICANT)",
+                        "C": "0.08 vs <0.03 (3x higher - VERY SIGNIFICANT)",
+                        "conclusion": "Mills composition differs significantly from Oerlikon powder"
+                    }
+                },
+                "impact": "Composition differences affect thermophysical properties (density, specific heat, latent heat) but especially melting temperatures. NIST data is preferred over Mills for non-melting properties due to closer composition match."
+            }
+        },
+        "source_hierarchy": {
+            "principle": "Oerlikon specifies MetcoAdd 316L-A as 'similar to EN 1.4404 and UNS S31603', which determines that EN/DIN standards are PRIMARY (European system) and ASTM/UNS are SECONDARY for this material.",
+            "tier_1_actual_material": {
+                "priority": "HIGHEST",
+                "sources": [
+                    "1a. Your direct measurements (Platz et al. 2024) - what you actually measured on your powder batches",
+                    "1b. Oerlikon Metco datasheets for MetcoAdd 316L-A - the powder you actually use (batch-specific)"
+                ]
+            },
+            "tier_2_primary_standards": {
+                "priority": "HIGH",
+                "justification": "Oerlikon specification 'similar to EN 1.4404' drives preference for European standards",
+                "sources": [
+                    "2a. DIN EN 10088-1 (European standard for stainless steels)",
+                    "2b. EN standards (European norms)"
+                ]
+            },
+            "tier_3_authoritative_research": {
+                "priority": "MEDIUM-HIGH",
+                "justification": "Peer-reviewed, citable research with high-quality experimental data",
+                "sources": [
+                    "3a. NIST SRM 1155a measurements (Pichler et al. 2020) - closest composition match, certified reference material",
+                    "3b. Mills (2002) 'Recommended Values of Thermophysical Properties' - comprehensive compilation",
+                    "3c. ASM Handbooks - peer-reviewed materials consensus"
+                ]
+            },
+            "tier_4_industry_consensus": {
+                "priority": "MEDIUM",
+                "justification": "Multiple independent industry sources provide validation",
+                "sources": [
+                    "4a. Multiple industry datasheets agreeing (Ulbrich, Sandmeyer, SLM Solutions, etc.)",
+                    "4b. Single industry datasheets - lower confidence"
+                ]
+            },
+            "tier_5_secondary_standards": {
+                "priority": "MEDIUM-LOW",
+                "justification": "Secondary for 316L but still authoritative",
+                "sources": [
+                    "5a. ASTM standards (American system)",
+                    "5b. UNS designations"
+                ]
+            },
+            "application_rules": {
+                "particle_size": "Tier 1a - YOUR measurements (Platz papers) - actual batch characterization",
+                "melting_temperatures": "Tier 1b - OERLIKON specs - batch-specific for your exact powder",
+                "composition": "Tier 1b - OERLIKON nominal values - your actual powder specification",
+                "thermophysical_properties_with_nist_data": "Tier 3a - NIST (Pichler 2020) preferred over Mills due to closer composition match (Mo: 2.19% vs 2.5%, Si: 0.52% vs 1.0%, C: 0.026% vs 0.08%)",
+                "thermophysical_properties_without_nist": "Tier 2 (DIN) > Tier 3 (Mills/ASM) > Tier 4 (Industry)",
+                "when_sources_conflict": "Follow tier hierarchy; document alternatives in metadata with reasoning",
+                "composition_similarity_matters": "For composition-dependent properties (density, specific heat, latent heat), prefer sources with closest composition match to Oerlikon powder"
+            },
+            "rationale": {
+                "why_nist_over_mills": "NIST SRM 1155a composition (Cr: 17.8%, Ni: 12.47%, Mo: 2.19%, C: 0.026%) is much closer to Oerlikon MetcoAdd 316L-A (Cr: 18%, Ni: 12%, Mo: 2%, C: <0.03%) than Mills generic 316L (Cr: 17%, Ni: 12%, Mo: 2.5%, Si: 1.0%, C: 0.08%). Composition differences of 25% in Mo, 50% in Si, and 3× in C significantly affect thermophysical properties.",
+                "why_din_primary": "Oerlikon explicitly specifies 'similar to EN 1.4404' which is the European designation. This makes EN/DIN standards the primary reference system for this specific powder.",
+                "why_oerlikon_for_melting": "Melting temperatures are highly composition-dependent. Oerlikon's batch-specific values (Solidus: 1390°C, Liquidus: 1448°C) reflect the actual powder composition and should take precedence over generic 316L values from standards or handbooks."
+            }
+        },
+        "measurement_conditions": {
+            "temperature": "25°C",
+            "state": "Powder form properties at room temperature"
+        },
+        "sources": {
+            "solidus_temp": {
+                "value": 1663.0,
+                "unit": "K",
+                "source": "Oerlikon Metco Material Product Data Sheet for MetcoAdd 316L-A: Solidus = 1390°C ± 10°C (1663K ± 10K)",
+                "alternative_sources": {
+                    "nist_srm_1155a": "1675 ± 30 K (Pichler et al. 2020)",
+                    "mills_2002": "1658 K (1385°C, Richardson et al.)"
+                },
+                "status": "VERIFIED - using Oerlikon value",
+                "reason": "Melting temperatures are highly composition-sensitive. Using manufacturer specification for YOUR specific powder composition."
+            },
+            "liquidus_temp": {
+                "value": 1721.0,
+                "unit": "K",
+                "source": "Oerlikon Metco Material Product Data Sheet for MetcoAdd 316L-A: Liquidus = 1448°C ± 10°C (1721K ± 10K)",
+                "alternative_sources": {
+                    "nist_srm_1155a": "1708 ± 30 K (Pichler et al. 2020)",
+                    "mills_2002": "1723 K (1450°C)"
+                },
+                "status": "VERIFIED - using Oerlikon value",
+                "reason": "Melting temperatures are highly composition-sensitive. Using manufacturer specification for YOUR specific powder composition."
+            },
+            "melting_temp": {
+                "value": 1692.0,
+                "unit": "K",
+                "source": "Calculated as average of solidus and liquidus from Oerlikon Metco datasheet: (1663 + 1721) / 2 = 1692K",
+                "alternative_sources": {
+                    "nist_srm_1155a": "1691.5 K (average of 1675 and 1708 K)",
+                    "mills_2002": "1690.5 K (average of 1658 and 1723 K)"
+                },
+                "status": "VERIFIED - using Oerlikon-based value",
+                "reason": "Calculated from Oerlikon solidus/liquidus for consistency with your powder composition."
+            },
+            "particle_radius": {
+                "value": 1.55e-05,
+                "unit": "m",
+                "source": "MEASURED VALUE USED: D50 ≈ 31 µm (estimated from measured D10=20.3 µm, D90=51.75 µm) → radius = 15.5 µm = 1.55e-5 m. Measurement from Platz et al. (2024) ZWF paper using Bettersizer S3 Plus on actual powder batch used in experiments. Manufacturer nominal: D50=30 µm (1.5e-5 m).",
+                "status": "VERIFIED - using actual batch measurements",
+                "important_note": "This value is specific to the powder batch used in the referenced experiments. Different batches may have different particle size distributions (±5-15% variation observed). Always measure actual batch when conducting new experiments."
+            },
+            "density": {
+                "value": 7904.0,
+                "unit": "kg/m³",
+                "source": "Pichler, P. et al. (2020) 'Measurements of thermophysical properties of solid and liquid NIST SRM 316L stainless steel', Journal of Materials Science. Room temperature (298K) density: 7904 ± 25 kg/m³ measured on NIST SRM 1155a.",
+                "alternative_sources": {
+                    "mills_2002": "7950 kg/m³ (Touloukian 1967, cited in Mills Table 1)",
+                    "oerlikon_apparent_density": ">4 g/cm³ (powder, not bulk)"
+                },
+                "status": "VERIFIED - using NIST value",
+                "reason": "NIST SRM 1155a has closest composition match to Oerlikon powder (see composition_similarity_analysis). NIST value is 7904 kg/m³ vs Mills 7950 kg/m³ (0.6% difference). Using NIST due to better composition match and direct measurement with uncertainty quantification."
+            },
+            "specific_heat": {
+                "value": 520.0,
+                "unit": "J/(kg·K)",
+                "source": "Pichler, P. et al. (2020) NIST SRM 1155a: DSC measurements give Cp = 528 ± 11 J/(kg·K) at 473K. Extrapolating to room temperature yields ~520 J/(kg·K) at 298K.",
+                "alternative_sources": {
+                    "mills_2002": "480 J/(kg·K) - Cp₂₅ = 0.48 J/(g·K) from DPSC measurements (Richardson et al., cited in Mills Section 4)"
+                },
+                "status": "VERIFIED - using NIST value",
+                "reason": "NIST composition is much closer to Oerlikon powder than Mills composition (especially Mo: 2.19% vs 2.5%, Si: 0.52% vs 1.0%, C: 0.026% vs 0.08%). These compositional differences significantly affect specific heat. NIST value ~8% higher than Mills."
+            },
+            "thermal_conductivity": {
+                "value": 13.5,
+                "unit": "W/(m·K)",
+                "source": "Mills, K.C. (2002) 'Recommended Values of Thermophysical Properties for Selected Commercial Alloys', Section 5. Room temperature thermal conductivity estimated from Figures 4 and 5 showing data from Chu and Ho [8], Szelagowski [2], and Monaghan [9]. Typical range: 13-14 W/(m·K) at 298K for austenitic stainless steel 316.",
+                "status": "VERIFIED - from Mills (2002)",
+                "note": "Mills reports that Szelagowski [2] and Monaghan [9] laser flash measurements are 5-10% higher than earlier Chu and Ho [8] values. Value of 13.5 W/(m·K) represents middle of reported range."
+            },
+            "thermal_diffusivity": {
+                "value": 3.2846e-06,
+                "unit": "m²/s",
+                "source": "CALCULATED from α = k/(ρ·cp) where k = 13.5 W/(m·K) (Mills 2002), ρ = 7904 kg/m³ (Pichler 2020, NIST), cp = 520 J/(kg·K) (Pichler 2020, NIST). Calculation: α = 13.5 / (7904 × 520) = 3.2846×10⁻⁶ m²/s",
+                "status": "VERIFIED - calculated from verified sources",
+                "components": {
+                    "thermal_conductivity": "13.5 W/(m·K) from Mills (2002)",
+                    "density": "7904 kg/m³ from Pichler et al. (2020)",
+                    "specific_heat": "520 J/(kg·K) from Pichler et al. (2020)"
+                },
+                "note": "Previous value was 4.0425×10⁻⁶ m²/s which was calculated using incorrect thermal conductivity. Updated value uses Mills (2002) thermal conductivity combined with NIST composition-matched density and specific heat."
+            },
+            "surface_tension": {
+                "value": 1.6,
+                "unit": "N/m",
+                "source": "Mills, K.C. (2002) Section 7 provides sulfur-content dependent equations. For typical S content (~0.03 wt%), using Equations 4-6: γ₁₇₀₀ = 1150 - 90.9×ln(0.03) = 1467 mN/m ≈ 1.47 N/m; (dγ/dT)₁₇₀₀ = 1.51 + 0.268×ln(0.03) = 0.57 mN/(m·K). At melting point (~1450°C): γ ≈ 1.47 + 0.57×(1450-1700)×10⁻³ ≈ 1.33 N/m. Value of 1.6 N/m is conservative upper estimate.",
+                "status": "REASONABLE - Mills (2002) S-content dependent",
+                "note": "Surface tension strongly depends on sulfur content (see Mills Figures 6a, 6b). Brooks [10] measurements show γ ranges from ~1.3-1.6 N/m depending on S content (100-1000 ppm). Without exact S content of Oerlikon powder, 1.6 N/m is reasonable upper bound."
+            },
+            "viscosity": {
+                "value": 0.0056,
+                "unit": "kg/(m·s)",
+                "source": "Mills, K.C. (2002) Section 6 states: 'The viscosity values given in Table 1 were estimated by analogy with measured viscosities for pure iron and Ni and IN718.' No specific value provided in Mills. Current value (0.0056 Pa·s = 5.6 mPa·s) is typical for molten stainless steels.",
+                "status": "ESTIMATED - no direct measurement in Mills (2002)",
+                "note": "Mills does not provide specific viscosity values for 316L. Typical molten steel viscosity range: 4-7 mPa·s. Value needs experimental verification."
+            },
+            "epsilon": {
+                "value": 0.35,
+                "unit": "dimensionless",
+                "source": "Mills, K.C. (2002) Section 8 and Figure 7 show total normal emissivity (ε_TN) is highly surface-dependent: 0.1-0.2 for mechanically polished surfaces in high vacuum, ~0.7 for oxidized surfaces (oxidized at 980°C). Bogaard et al. [5] measurements cited in Mills.",
+                "status": "REASONABLE - Mills (2002) surface-condition dependent",
+                "note": "Value of 0.35 is middle estimate for powder particles which have rough surfaces (higher emissivity than polished) but not heavily oxidized. For simulation purposes, sensitivity analysis recommended as emissivity varies 0.1-0.7 depending on surface condition."
+            },
+            "laser_absorptivity": {
+                "value": 0.50,
+                "unit": "dimensionless",
+                "source": "Autodesk/ORNL DED study (2022) reports range 0.25-0.75 for 316L in DED, with calibrated value of 0.36 for their conditions (https://blogs.autodesk.com/advanced-manufacturing/2022/02/22/316lvalidation/). Trapp et al. (2017) reports 0.50-0.78 for keyhole regime at 1070 nm in PBF. Value of 0.50 selected as upper-moderate estimate within DED range.",
+                "status": "INITIAL ESTIMATE",
+                "wavelength": "1080 nm ± 20 nm (Laserline LDF 8000-6)",
+                "confidence": "MODERATE",
+                "limitations": [
+                    "No direct measurements exist for 316L in DED-LB at 1080 nm",
+                    "Value is process-dependent (power, speed, spot size)",
+                    "Simulation does not model: powder-laser interaction, multiple reflections, dynamic surface changes",
+                    "This represents effective energy coupling, not pure material absorptivity"
+                ],
+                "plausible_range": "0.35-0.65",
+                "note": "Parameter can be refined through comparison of simulated vs measured melt pool geometry, adjusted within plausible range"
+            },
+            "latent_heat_of_fusion": {
+                "value": 290000.0,
+                "unit": "J/kg",
+                "source": "Pichler, P. et al. (2020) NIST SRM 1155a: ΔH_fus = 290 kJ/kg = 290,000 J/kg. Calculated from enthalpy difference between end of solid phase (H₂₉₈,₁ = 822 kJ/kg at 1675K) and beginning of liquid phase (H₂₉₈,₂ = 1112 kJ/kg at 1708K): ΔH = 1112 - 822 = 290 kJ/kg.",
+                "alternative_sources": {
+                    "mills_2002": "260,000 J/kg (260 J/g measured by Richardson et al., cited in Mills Section 4)"
+                },
+                "status": "VERIFIED - using NIST value",
+                "reason": "NIST composition (Mo 2.19%, Si 0.52%, C 0.026%) is much closer to Oerlikon powder (Mo 2%, Si <1%, C <0.03%) than Mills composition (Mo 2.5%, Si 1%, C 0.08%). Latent heat is affected by composition. NIST value is 11.5% higher than Mills. High-quality measurement with uncertainty quantification on certified reference material."
+            }
+        },
+        "notes": "Austenitic stainless steel powder for DED-LB additive manufacturing. Properties at reference temperature (25°C) unless otherwise specified. High-temperature dependent properties (surface tension, viscosity) are for molten state.",
+        "units": {
+            "density": "kg/m³",
+            "specific_heat": "J/(kg·K)",
+            "thermal_diffusivity": "m²/s",
+            "thermal_conductivity": "W/(m·K)",
+            "surface_tension": "N/m",
+            "viscosity": "kg/(m·s)",
+            "epsilon": "dimensionless",
+            "laser_absorptivity": "dimensionless",
+            "melting_temp": "K",
+            "solidus_temp": "K",
+            "liquidus_temp": "K",
+            "latent_heat_of_fusion": "J/kg",
+            "particle_radius": "m"
+        },
+        "descriptions": {
+            "density": "Mass per unit volume of the solid material",
+            "specific_heat": "Amount of heat required to raise the temperature of 1 kg of material by 1 K",
+            "thermal_diffusivity": "Rate at which heat diffuses through the material; calculated as k/(ρ·cp)",
+            "thermal_conductivity": "Rate of heat conduction through the material",
+            "surface_tension": "Force per unit length at the liquid-gas interface; governs melt pool shape and wetting behavior",
+            "viscosity": "Dynamic viscosity of molten material; resistance to flow in liquid state",
+            "epsilon": "Emissivity; fraction of thermal radiation emitted compared to a perfect black body",
+            "laser_absorptivity": "Fraction of incident laser energy absorbed by the material surface",
+            "melting_temp": "Equilibrium melting temperature; average of solidus and liquidus for single-phase materials",
+            "solidus_temp": "Temperature below which material is completely solid",
+            "liquidus_temp": "Temperature above which material is completely liquid",
+            "latent_heat_of_fusion": "Energy required to transform 1 kg of material from solid to liquid at melting temperature",
+            "particle_radius": "Average radius of spherical powder particles used in DED-LB process"
+        }
+    }
+}
