@@ -1,9 +1,8 @@
-from typing import Dict, Any, Tuple, Optional, List
+from typing import Dict, Any,  Optional, List
 import numpy as np
 
 from callbacks._base_callbacks import SimulationEvent
 from callbacks._callback_manager import CallbackManager
-from callbacks.completion_callbacks import SimulationComplete
 from configuration.process_parameters import set_params
 from geometry.clad_profile_manager import CladProfileManager
 from geometry.clad_dimensions import YuzeHuangCladDimensions
@@ -11,7 +10,6 @@ from scan_path.scan_path_manager import ScanPathManager
 from voxel.activated_volume import ActivatedVolume
 from voxel.temperature_volume import TrackTemperature
 from powder.powder_stream import YuzeHuangPowderStream
-from powder.powder_stream_new import VoxelPowderStream
 from thermal.temperature_change import EagarTsaiTemperature
 
 import warnings
@@ -79,7 +77,7 @@ class ProgressTracker:
         return (
                 (self._prev_track is None and self.current_track is not None) or
                 (self._prev_track is not None and self.current_track != self._prev_track) or
-                self._prev_progress >= 1.0
+                self._prev_progress >= 1.0 - 1e-9  # Account for floating point errors
         )
 
     @property
@@ -90,7 +88,7 @@ class ProgressTracker:
             return self._last_step_state['track_just_completed']
 
         # During step: check current progress
-        return self._raw_track_progress >= 1.0
+        return self._raw_track_progress >= 1.0 - 1e-9  # Account for floating point errors
 
     @property
     def layer_just_started(self) -> bool:
@@ -152,7 +150,7 @@ class ProgressTracker:
         }
 
         # If track is complete, reset progress for next track
-        if self._raw_track_progress >= 1.0:
+        if self._raw_track_progress >= 1.0 - 1e-9:  # Account for floating point errors
             self._raw_track_progress = 0.0
             self.current_y = None
             self.init_next_track = True
@@ -268,7 +266,8 @@ class MultiTrackMultiLayerSimulation:
         self.temperature_tracker = TrackTemperature(
             shape=self.config['volume_shape'],
             voxel_size=self.config['voxel_size'],
-            ambient_temp=self.config.get('ambient_temp', 300.0)
+            ambient_temp=self.config.get('ambient_temp', 300.0),
+            substrate_height=self.config.get('substrate_height', 0)
         )
 
         if powder_concentration_func is None:
@@ -610,7 +609,6 @@ if __name__ == "__main__":
     from callbacks.step_data_collector import StepDataCollector
     from callbacks.live_plotter_callback import AdvancedLivePlotter
     from callbacks.callback_collection import ProgressPrinter
-    from callbacks.track_calibration_callback import TrackCalibrationCallback
 
     # Create callbacks
     callbacks = [
@@ -618,7 +616,7 @@ if __name__ == "__main__":
         StepDataCollector(save_path=None),  # Save data
         AdvancedLivePlotter(interval=1),  # Live visualization every step
         ProgressPrinter(),  # Console progress output
-        TrackCalibrationCallback(),
+        #TrackCalibrationCallback(),
     ]
 
     # Create and run simulation

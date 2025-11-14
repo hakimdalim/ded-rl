@@ -11,6 +11,11 @@ from laser.temp_field_func_wrapper import TemperatureFieldWrapper
 from utils.field_boundary_dimension_search import find_symmetric_boundary_dimensions
 from utils.visualization_utils import find_surface, sample_at_surface, ensure_ax
 
+from voxel.heat_diffusion_conv import HeatDiffusionConvolution
+
+class MeltPoolBoundaryError(ValueError):
+    """Exception raised when melt pool extends beyond simulation domain boundaries."""
+    pass
 
 class TrackTemperature:
 
@@ -20,7 +25,8 @@ class TrackTemperature:
             self,
             shape: Tuple[int, int, int],
             voxel_size: Union[float, Tuple[float, float, float]],
-            ambient_temp: float = 300.0
+            ambient_temp: float = 300.0,
+            substrate_height: float = 0.0
     ):
         """Initialize temperature tracking volume.
 
@@ -28,8 +34,9 @@ class TrackTemperature:
             shape: Grid dimensions (nx, ny, nz)
             voxel_size: Voxel dimensions, either uniform (float) or per-axis (tuple)
             ambient_temp: Ambient temperature in Celsius
+            substrate_height: Physical substrate height in meters
         """
-        # Standardize voxel_size to handle both scalar and per-axis inputs
+        # Standardize voxel_size
         if isinstance(voxel_size, (int, float)):
             voxel_size = (float(voxel_size),) * 3
         self.voxel_size = np.array(voxel_size, dtype=float)
@@ -37,8 +44,17 @@ class TrackTemperature:
         self.shape = shape
         self.ambient_temp = ambient_temp
 
-        # Initialize temperature array to ambient temperature
+        # Calculate substrate thickness in voxels
+        substrate_nz = int(np.ceil(substrate_height / self.voxel_size[2])) if substrate_height > 0 else 0
+
+        # Initialize temperature array
         self.temperature = np.full(shape=shape, fill_value=ambient_temp, dtype=float)
+
+        # Initialize heat diffusion engine
+        self.diffusion_engine = HeatDiffusionConvolution.create_fast(
+            substrate_thickness=substrate_nz,
+            ambient_temperature=ambient_temp
+        )
 
     def reset(self):
         """Reset temperature field to ambient temperature."""
@@ -121,24 +137,27 @@ class TrackTemperature:
         """
         self.temperature[~activation_mask] = self.ambient_temp
 
-    def apply_diffusion(self, activation_mask: NDArray[np.bool_], sigma) -> None:
-        """Apply thermal diffusion between activated voxels using masked Gaussian filtering.
+    def apply_diffusion(self, activation_mask: NDArray[np.bool_], sigma: float) -> None:
+        """Apply thermal diffusion with substrate boundary conditions.
 
-        This method applies thermal diffusion by performing separable 3D Gaussian filtering
-        only on activated voxels, implementing the diffusion equation approximation:
-        ∂T/∂t = D∇²T where D is the thermal diffusivity. The Gaussian filter width (sigma)
-        is related to the diffusion time by σ = √(2D∆t).
+        Uses heat diffusion convolution engine with proper substrate BC.
+        Implements: ∂T/∂t = D∇²T via separable 3D convolution.
 
         Args:
             activation_mask: Boolean array indicating active voxels, must match temperature array shape
-            sigma: Gaussian sigma for diffusion, calculated from thermal diffusivity and time step
-                  as σ = √(2D∆t)
+            sigma: Gaussian sigma for diffusion in PHYSICAL units (meters)
+                   Calculated as σ = √(2D∆t) where D is thermal diffusivity
+
+        Raises:
+            ValueError: If activation mask shape doesn't match temperature shape
+            ValueError: If voxel sizes are not uniform (anisotropic grid not supported)
+            ValueError: If kernel size is too small
 
         Note:
-            - The diffusion is applied separately along each axis for computational efficiency
-            - Only activated voxels participate in the diffusion process
-            - The temperature field is modified in-place
-            - The method preserves the original temperature values of non-activated voxels
+            - Uses substrate boundary conditions (heat sink at z=0)
+            - Only activated voxels participate in diffusion
+            - Temperature field is modified in-place
+            - Non-activated voxels preserve original temperature values
         """
         # Input validation
         if activation_mask.shape != self.temperature.shape:
@@ -147,26 +166,42 @@ class TrackTemperature:
         if not np.any(activation_mask):
             return  # Nothing to do if no voxels are activated
 
-        # Store original temperatures of non-activated voxels
-        inactive_temps = self.temperature[~activation_mask].copy()
-
-        # Convert to grid units by dividing by voxel size for each dimension
-        # This gives us sigma in array index units as required by the Gaussian filter
-        voxel_sigmas = sigma / self.voxel_size  # dimensionless (grid units)
-
-
-        # Apply Gaussian filter along each axis separately for efficiency
-        # This implements the separable 3D diffusion process
-        for axis in range(3):
-            self.temperature = apply_masked_gaussian_3d(
-                data=self.temperature,
-                mask=activation_mask,
-                sigma=voxel_sigmas[axis],
-                axis=axis
+        # Check for uniform voxel size (required for isotropic diffusion)
+        if not np.allclose(self.voxel_size, self.voxel_size[0]):
+            raise ValueError(
+                f"Non-uniform voxel sizes detected: {self.voxel_size}. "
+                f"Heat diffusion requires uniform voxel grid (isotropic discretization)."
             )
 
-        # Restore original temperatures for non-activated voxels
-        self.temperature[~activation_mask] = inactive_temps
+        # Convert sigma to voxel units
+        sigma_voxels = sigma / self.voxel_size[0]
+
+        # Create Gaussian kernel (±3σ coverage)
+        kernel_size = int(6 * sigma_voxels) + 1
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        # Validate kernel size
+        if kernel_size < 3:
+            raise ValueError(
+                f"Kernel size too small ({kernel_size}). "
+                f"Increase sigma or use smaller voxels. "
+                f"sigma={sigma:.6f}m, voxel_size={self.voxel_size[0]:.6f}m, "
+                f"sigma_voxels={sigma_voxels:.3f}"
+            )
+
+        # Build normalized Gaussian kernel
+        x = np.arange(kernel_size) - kernel_size // 2
+        kernel = np.exp(-0.5 * (x / sigma_voxels) ** 2)
+        kernel /= kernel.sum()
+
+        # Apply diffusion with substrate boundary conditions
+        self.temperature = self.diffusion_engine.diffuse_step(
+            temperature=self.temperature,
+            mask=activation_mask,
+            kernel=kernel,
+            pad_width=kernel_size // 2
+        )
 
     def get_melt_pool_dimensions(self, params) -> Dict[str, float]:
         """Calculate melt pool dimensions using vectorized interpolation for sub-voxel accuracy."""
@@ -183,6 +218,27 @@ class TrackTemperature:
                 'max_temp': np.max(self.temperature),
                 'voxel_center': (x_center, y_center, z_center)
             }
+
+        # Check if melt pool extends to domain boundaries
+        molten_voxels = np.argwhere(melt_mask)
+        if len(molten_voxels) > 0:
+            x_min, y_min, z_min = molten_voxels.min(axis=0)
+            x_max, y_max, z_max = molten_voxels.max(axis=0)
+
+            boundaries_hit = []
+            if x_min == 0: boundaries_hit.append("X_min")
+            if x_max == self.temperature.shape[0] - 1: boundaries_hit.append("X_max")
+            if y_min == 0: boundaries_hit.append("Y_min")
+            if y_max == self.temperature.shape[1] - 1: boundaries_hit.append("Y_max")
+            if z_min == 0: boundaries_hit.append("Z_min")
+            if z_max == self.temperature.shape[2] - 1: boundaries_hit.append("Z_max")
+
+            if boundaries_hit:
+                raise MeltPoolBoundaryError(
+                    f"Melt pool extends to domain boundary: {boundaries_hit}. "
+                    f"Max temp: {np.max(self.temperature):.1f}K at voxel ({x_center},{y_center},{z_center}). "
+                    f"Domain too small - increase size."
+                )
 
         # Find coordinates of maximum temperature
 

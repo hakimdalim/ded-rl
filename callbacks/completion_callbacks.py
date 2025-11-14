@@ -132,6 +132,7 @@ class TrackCountCompletionCallback(BaseCompletionCallback):
 
     def get_completion_message(self, context: dict) -> str:
         """Get track completion message."""
+        sim = context['simulation']
         return f"Build stopped: completed {self.completed_tracks} tracks (limit: {self.max_tracks})"
 
 

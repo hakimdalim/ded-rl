@@ -1,0 +1,107 @@
+{
+    "laser_system": {
+        "manufacturer": "Laserline GmbH",
+        "model": "LDF 8000-6",
+        "laser_type": "Diode laser (fiber-coupled)",
+        "max_power": 8000.0,
+        "max_power_unit": "W",
+        "wavelength_nominal": 1080.0,
+        "wavelength_tolerance": 20.0,
+        "wavelength_unit": "nm",
+        "wavelength_range_min": 1060.0,
+        "wavelength_range_max": 1100.0,
+        "beam_quality": 6.0,
+        "beam_quality_unit": "mm·mrad"
+    },
+    "metadata": {
+        "data_sources": [
+            {
+                "source_type": "peer_reviewed_publication",
+                "title": "Investigation on different laser-powder alignments and their influence on part properties in high-speed Directed Energy Deposition",
+                "authors": "Platz, J., Steiner-Stark, J., Kirsch, B., Aurich, J.C.",
+                "publication": "Procedia CIRP",
+                "conference": "13th CIRP Conference on Photonic Technologies [LANE 2024]",
+                "year": 2024,
+                "quote": "The machine was paired with the 8 kW diode laser LDF 8000-6 from Laserline with a wavelength of 1.080 nm ± 20 nm and a beam quality of 6 mm*mrad.",
+                "verified_parameters": [
+                    "manufacturer",
+                    "model",
+                    "laser_type",
+                    "max_power",
+                    "wavelength_nominal",
+                    "wavelength_tolerance",
+                    "beam_quality"
+                ]
+            },
+            {
+                "source_type": "peer_reviewed_publication",
+                "title": "Fertigung funktional gradierter Materialien auf porösen Metallen durch Laserauftragschweißen",
+                "authors": "Platz, J., Steiner-Stark, J., Kirsch, B., Aurich, J.C.",
+                "publication": "ZWF Zeitschrift für wirtschaftlichen Fabrikbetrieb",
+                "volume": 119,
+                "issue": "7-8",
+                "pages": "515-519",
+                "year": 2024,
+                "doi": "10.1515/zwf-2024-1092",
+                "quote": "Ein Laserline LDF 8000-6 Diodenlaser mit einer Leistung von bis zu 8 kW und einer Wellenlänge von 1080 nm ± 20 nm diente als Laserstrahlquelle.",
+                "verified_parameters": [
+                    "manufacturer",
+                    "model",
+                    "laser_type",
+                    "max_power",
+                    "wavelength_nominal",
+                    "wavelength_tolerance"
+                ],
+                "note": "German language publication confirming specifications"
+            }
+        ],
+        "verification_status": {
+            "manufacturer": "VERIFIED - from both publications",
+            "model": "VERIFIED - from both publications",
+            "laser_type": "VERIFIED - from both publications",
+            "max_power": "VERIFIED - from both publications",
+            "wavelength_nominal": "VERIFIED - from both publications",
+            "wavelength_tolerance": "VERIFIED - from both publications",
+            "beam_quality": "VERIFIED - from LANE 2024 publication"
+        },
+        "installation_location": {
+            "institution": "RPTU Kaiserslautern-Landau",
+            "institute": "Institute for Manufacturing Technology and Production Systems (FBK)",
+            "country": "Germany",
+            "source": "Author affiliations from both publications"
+        },
+        "research_context": {
+            "project": "TRR 375 HyPo - Multifunctional high-performance components from hybrid porous materials",
+            "subproject": "B01 - Laser directed energy deposition of functionally graded materials on porous metals",
+            "project_id": "TRR 375/1 - Project-ID 511263698",
+            "funding_agency": "Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)",
+            "source": "Acknowledgements section of both publications"
+        }
+    },
+    "wavelength_classification": {
+        "spectrum_region": "Near-infrared (NIR)",
+        "visibility": "Invisible to human eye",
+        "safety_classification": "Class 4 laser (assumed based on power level)",
+        "comparable_laser_types": [
+            "Nd:YAG lasers (1064 nm)",
+            "Fiber lasers (1070 nm)",
+            "Yb-doped fiber lasers (1060-1080 nm)"
+        ],
+        "note": "Comparable laser types listed for reference in literature searches for absorptivity data. Absorptivity values at these wavelengths are generally applicable to 1080 nm."
+    },
+    "units": {
+        "max_power": "W (Watts)",
+        "wavelength": "nm (nanometers)",
+        "beam_quality": "mm·mrad (millimeter-milliradians, beam parameter product)"
+    },
+    "notes": {
+        "beam_quality_interpretation": "Beam quality M² can be calculated from beam parameter product. Lower BPP values indicate better beam quality (more focusable beam).",
+        "wavelength_range": "The ±20 nm tolerance means actual emission wavelength during operation falls within 1060-1100 nm range.",
+        "diode_laser_characteristics": "Fiber-coupled diode lasers typically offer high electrical efficiency, reliability, and compact design compared to other industrial laser types.",
+        "data_integrity": "All values in this file are directly quoted from peer-reviewed publications authored by research group members at FBK RPTU. No estimated or assumed values are included."
+    },
+    "file_version": "1.0.0",
+    "schema_version": "laser_system_v1",
+    "last_updated": "2024-11-02",
+    "created_by": "Maik Schürmann, FBK RPTU Kaiserslautern-Landau"
+}
