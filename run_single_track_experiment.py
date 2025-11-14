@@ -138,7 +138,6 @@ def parse_args():
 
     # Material
     parser.add_argument('--material', '-m', default='316L',
-                       choices=['316L', '17-4PH'],
                        help='Base material')
 
     # Process parameters
@@ -190,6 +189,11 @@ def parse_args():
     # HPC configuration
     parser.add_argument('--max-cpu-cores', type=int, default=None,
                        help='Maximum CPU cores to use (None=single-threaded, >0=multi-threaded with limit)')
+
+    # Material file storage mode
+    parser.add_argument('--material-file-mode', type=str, default='multi-file',
+                       choices=['single-file', 'multi-file'],
+                       help='Material file storage: single-file=all_materials.json, multi-file=individual {name}.json (default: multi-file)')
 
     return parser.parse_args()
 
@@ -330,6 +334,9 @@ def main():
 
     # Create MaterialManager with material and process parameters
     feeder_percent = args.powder_feed / MaterialManager.FEED_SLOPE_G_PER_MIN_PER_PERCENT
+
+    # Set material file storage mode from argument
+    MaterialManager.MATERIAL_FILE_MODE = args.material_file_mode
 
     params = MaterialManager.from_defaults()
     params.request_change(

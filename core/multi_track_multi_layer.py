@@ -1,9 +1,8 @@
-from typing import Dict, Any, Tuple, Optional, List
+from typing import Dict, Any,  Optional, List
 import numpy as np
 
 from callbacks._base_callbacks import SimulationEvent
 from callbacks._callback_manager import CallbackManager
-from callbacks.completion_callbacks import SimulationComplete
 from configuration.process_parameters import set_params
 from geometry.clad_profile_manager import CladProfileManager
 from geometry.clad_dimensions import YuzeHuangCladDimensions
@@ -11,7 +10,6 @@ from scan_path.scan_path_manager import ScanPathManager
 from voxel.activated_volume import ActivatedVolume
 from voxel.temperature_volume import TrackTemperature
 from powder.powder_stream import YuzeHuangPowderStream
-from powder.powder_stream_new import VoxelPowderStream
 from thermal.temperature_change import EagarTsaiTemperature
 
 import warnings
@@ -611,7 +609,6 @@ if __name__ == "__main__":
     from callbacks.step_data_collector import StepDataCollector
     from callbacks.live_plotter_callback import AdvancedLivePlotter
     from callbacks.callback_collection import ProgressPrinter
-    from callbacks.track_calibration_callback import TrackCalibrationCallback
 
     # Create callbacks
     callbacks = [

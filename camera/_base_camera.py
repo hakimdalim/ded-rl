@@ -115,10 +115,16 @@ class BaseCamera:
                  plane_size: Tuple[float, float] = (0.06, 0.04),  # meters (sensor size)
                  pixel_size_xy: Optional[Tuple[float, float]] = None,
                  resolution_wh: Optional[Tuple[int, int]] = None,
-                 voxel_size_xyz: Optional[Tuple[float, float, float]] = None) -> None:
+                 voxel_size_xyz: Optional[Tuple[float, float, float]] = None,
+                 fill_gaps: bool = False,
+                 depth_tolerance: Optional[float] = None,
+                 max_gap_size: int = 3) -> None:
         """
         up_hint: Which way is "up" in world space (default +Z). Prevents gimbal lock.
         voxel_size_xyz: For converting voxel indices to world coordinates.
+        fill_gaps: If True, automatically fill gaps using depth-aware interpolation.
+        depth_tolerance: Max depth difference (m) to consider "same surface". If None, auto-set to voxel_size/2.
+        max_gap_size: Maximum distance (pixels) from hit to fill gaps.
 
         Sampling: Specify EITHER resolution_wh OR pixel_size_xy, not both.
         """
@@ -136,6 +142,16 @@ class BaseCamera:
             self.voxel_size_xyz = np.array([1e-4, 1e-4, 1e-4], dtype=float)
         else:
             self.voxel_size_xyz = np.asarray(voxel_size_xyz, dtype=float)
+
+        # Gap filling
+        self.fill_gaps = bool(fill_gaps)
+        if depth_tolerance is None and fill_gaps:
+            # Auto-set to 3× voxel_size (more practical than 0.5×)
+            # This accounts for numerical precision and projection variations
+            self.depth_tolerance = float(np.mean(self.voxel_size_xyz) * 3.0)
+        else:
+            self.depth_tolerance = float(depth_tolerance) if depth_tolerance is not None else 0.0
+        self.max_gap_size = int(max_gap_size)
 
         # Coverage/sampling: plane_size + (resolution OR pixel_size)
         self.plane_size = (float(plane_size[0]), float(plane_size[1]))
@@ -357,6 +373,9 @@ class BaseCamera:
         Render a **first-visible** thermal image using the camera's sensor plane
         anchored at ``self.pos`` with normal ``self.forward`` (meters).
 
+        If fill_gaps=True was set during camera initialization, gaps are automatically
+        filled using depth-aware interpolation.
+
         Parameters
         ----------
         volume_activated : (Nx,Ny,Nz) bool
@@ -372,7 +391,9 @@ class BaseCamera:
         Returns
         -------
         img : (W,H) ndarray
-        extent : (xmin, xmax, ymin, ymax) in sensor plane coordinates (meters), centered at 0.
+            Temperature image (gap-filled if fill_gaps=True).
+        extent : (xmin, xmax, ymin, ymax)
+            Sensor plane coordinates (meters), centered at 0.
         """
         A = volume_activated
         T = temperature_field
@@ -449,15 +470,32 @@ class BaseCamera:
         order = np.lexsort((-zc, flat))
         flat_sorted = flat[order]
         idx_sorted = idx[inside][order]
+        zc_sorted = zc[order]  # Keep depth values for gap filling
 
         unique_flat, first_pos = np.unique(flat_sorted, return_index=True)
         vox_hit = idx_sorted[first_pos]
+        depths_hit = zc_sorted[first_pos]
         temps = T[vox_hit[:, 0], vox_hit[:, 1], vox_hit[:, 2]]
 
         img = np.full((W, H), float(ambient), dtype=T.dtype)
         ix_hit = unique_flat % W
         iy_hit = unique_flat // W
         img[ix_hit, iy_hit] = temps
+
+        # Apply gap filling if enabled
+        if self.fill_gaps:
+            try:
+                from camera.fast_gap_filling import fill_gaps_fast
+                depth_map = np.full((W, H), np.inf, dtype=float)
+                depth_map[ix_hit, iy_hit] = depths_hit
+                img = fill_gaps_fast(
+                    img, depth_map, ambient,
+                    depth_tolerance=self.depth_tolerance,
+                    max_gap_size=self.max_gap_size
+                )
+            except ImportError as e:
+                print(f"WARNING: Could not import depth_aware_gap_filling: {e}")
+                print("Gap filling disabled. Place depth_aware_gap_filling.py in the same directory as _base_camera.py")
 
         return img, extent
 
@@ -526,6 +564,7 @@ class BaseCamera:
         Efficiently render and crop in one call (10-100x faster for small crops).
 
         Combines ROI pre-filtering with cropping for maximum performance.
+        Gap filling (if enabled) is applied automatically.
 
         Parameters
         ----------
@@ -539,7 +578,10 @@ class BaseCamera:
 
         Returns
         -------
-        img, extent : Cropped image at native resolution and extent
+        img : np.ndarray
+            Cropped image (gap-filled if fill_gaps=True)
+        extent : Tuple[float, float, float, float]
+            Image extent (xmin, xmax, ymin, ymax)
         """
         roi = self.calculate_roi_for_crop(window_center, window_size, margin=roi_margin)
         img, extent = self.render_first_hit(volume_activated, temperature_field, ambient=ambient, roi_world=roi)
@@ -869,9 +911,10 @@ class FollowingCameraMixin:
     ...     cam.update_target(pos, motion_direction=motion)
     ...     img, extent = cam.render_first_hit(...)
     """
+
     def configure_cartesian_following(self,
-                                     offset: ArrayLike3 = (0.0, -0.12, 0.04),
-                                     up_hint: ArrayLike3 = (0.0, 0.0, 1.0)) -> None:
+                                      offset: ArrayLike3 = (0.0, -0.12, 0.04),
+                                      up_hint: ArrayLike3 = (0.0, 0.0, 1.0)) -> None:
         """
         Configure camera to follow using fixed cartesian offset in WORLD coordinates.
 
@@ -917,10 +960,10 @@ class FollowingCameraMixin:
         }
 
     def configure_spherical_following(self,
-                                     azimuth_offset_deg: float = 180.0,
-                                     elevation_deg: float = 20.0,
-                                     distance: float = 0.12,
-                                     up_hint: ArrayLike3 = (0.0, 0.0, 1.0)) -> None:
+                                      azimuth_offset_deg: float = 180.0,
+                                      elevation_deg: float = 20.0,
+                                      distance: float = 0.12,
+                                      up_hint: ArrayLike3 = (0.0, 0.0, 1.0)) -> None:
         """
         Configure camera to follow using spherical coordinates.
 
@@ -993,10 +1036,10 @@ class FollowingCameraMixin:
         }
 
     def update_target(self,
-                     target_pos: ArrayLike3,
-                     motion_direction: Optional[ArrayLike3] = None,
-                     *,
-                     orient: bool = True) -> None:
+                      target_pos: ArrayLike3,
+                      motion_direction: Optional[ArrayLike3] = None,
+                      *,
+                      orient: bool = True) -> None:
         """
         Update camera position to follow the target (unified method).
 
@@ -1060,9 +1103,9 @@ class FollowingCameraMixin:
             raise RuntimeError(f"Unknown follow mode: {self._follow_mode}")
 
     def _update_cartesian(self,
-                         target: np.ndarray,
-                         motion_direction: Optional[np.ndarray],
-                         orient: bool) -> None:
+                          target: np.ndarray,
+                          motion_direction: Optional[np.ndarray],
+                          orient: bool) -> None:
         """
         Internal: Update using cartesian offset configuration.
 
@@ -1080,9 +1123,9 @@ class FollowingCameraMixin:
             self.look_at(target, up_hint=up_hint)
 
     def _update_spherical(self,
-                         target: np.ndarray,
-                         motion_direction: Optional[np.ndarray],
-                         orient: bool) -> None:
+                          target: np.ndarray,
+                          motion_direction: Optional[np.ndarray],
+                          orient: bool) -> None:
         """Internal: Update using spherical configuration."""
         config = self._follow_config
         azimuth_offset_deg = config['azimuth_offset_deg']
@@ -1122,4 +1165,3 @@ class FollowingCameraMixin:
         self.pos = target + np.array([offset_x, offset_y, offset_z], float)
         if orient:
             self.look_at(target, up_hint=up_hint)
-

@@ -71,6 +71,8 @@ class CameraCallback(IntervalCallback):
 
             # Digital zoom window (mm at focal point)
             target_window_mm: Optional[Tuple[float, float]] = None,
+
+            fill_gaps=True,
             **kwargs: Any,
     ) -> None:
         super().__init__(events=SimulationEvent.STEP_COMPLETE, interval=interval, **kwargs)
@@ -116,6 +118,8 @@ class CameraCallback(IntervalCallback):
 
         # Motion tracking for local coordinate transformation
         self._previous_nozzle_pos = None
+
+        self.fill_gaps=fill_gaps
 
     # ------------------------------------------------------------------
     # Core callback logic
@@ -262,6 +266,7 @@ class CameraCallback(IntervalCallback):
             'resolution_wh': self.resolution_wh,
             'pixel_size_xy': self.pixel_size_xy,
             'voxel_size_xyz': tuple(map(float, voxel_size_xyz)),
+            'fill_gaps': self.fill_gaps,
         }
         
         if self.camera_type == "perspective":
