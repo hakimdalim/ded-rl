@@ -1,4 +1,7 @@
-from typing import Dict, Tuple, Optional, Callable
+from typing import Dict, Tuple, Optional, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import open3d as o3d
 from scipy import integrate
 from geometry.clad_interpolator import interpolate_track
 from geometry.clad_profile_function import GenerateParabolicCladProfile as ProfileGenerator
@@ -10,7 +13,10 @@ from scipy.spatial import Delaunay
 
 try:
     import open3d as o3d
+    O3D_AVAILABLE = True
 except ImportError as e:
+    O3D_AVAILABLE = False
+    o3d = None  # Set to None to avoid NameError
     Warning("Open3D not available. Mesh generation and visualization not possible. Error: ", e)
 
 
@@ -846,7 +852,7 @@ class CladProfileManager:
             self,
             x_res: int = 50,
             y_res: int = 50
-    ) -> o3d.geometry.TriangleMesh:
+    ):
 
         """
         Generate a 3D mesh representing the current state of the build.
@@ -858,6 +864,9 @@ class CladProfileManager:
         Returns:
             Open3D TriangleMesh representing the current top surface of the build.
         """
+        if not O3D_AVAILABLE:
+            raise ImportError("Open3D is not installed. Cannot generate mesh. Install with: pip install open3d")
+
         # Find all available profiles to determine bounds
         if not self._profiles:
             raise ValueError("No profiles found to process")
